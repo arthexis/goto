@@ -38,3 +38,12 @@ def test_compile_rejects_duplicate_labels() -> None:
 
     with pytest.raises(ParseError, match="Duplicate label"):
         Interpreter().compile("x:\nx:")
+
+
+def test_program_supports_expression_based_labels() -> None:
+    """Interpreter can jump using labels resolved from expressions."""
+
+    source = "\"start\":\ngoto \"s\" + \"tart\"\n"
+    result = Interpreter().run(source, max_steps=4)
+    assert result.terminated is False
+    assert result.reason == "step limit reached (4)"
