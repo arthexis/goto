@@ -18,14 +18,12 @@ def test_program_terminates_when_falling_off_end() -> None:
     assert result.steps == 1
 
 
-def test_program_stops_on_step_limit_for_loop() -> None:
-    """Execution stops when the max step budget is exhausted."""
+def test_compile_rejects_guaranteed_infinite_loop() -> None:
+    """Compilation rejects loops that are guaranteed to be infinite."""
 
     source = "start:\ngoto start\n"
-    result = Interpreter().run(source, max_steps=5)
-    assert result.terminated is False
-    assert result.reason == "step limit reached (5)"
-    assert result.steps == 5
+    with pytest.raises(ParseError, match="Infinite loop detected"):
+        Interpreter().compile(source)
 
 
 def test_compile_rejects_unknown_label_reference() -> None:
@@ -42,13 +40,12 @@ def test_compile_rejects_duplicate_labels() -> None:
         Interpreter().compile("x:\nx:")
 
 
-def test_program_supports_expression_based_labels() -> None:
-    """Interpreter can jump using labels resolved from expressions."""
+def test_compile_rejects_expression_based_infinite_loop() -> None:
+    """Compiler rejects expression-based labels when they create a hard loop."""
 
     source = "\"start\":\ngoto \"s\" + \"tart\"\n"
-    result = Interpreter().run(source, max_steps=4)
-    assert result.terminated is False
-    assert result.reason == "step limit reached (4)"
+    with pytest.raises(ParseError, match="Infinite loop detected"):
+        Interpreter().compile(source)
 
 
 def test_not_modifier_suppresses_goto_jump() -> None:
@@ -62,12 +59,23 @@ def test_not_modifier_suppresses_goto_jump() -> None:
 
 
 def test_even_not_modifiers_preserve_goto_jump() -> None:
-    """A goto with even number of `not` modifiers still jumps."""
+    """A goto with even number of `not` modifiers is validated as looping."""
 
     source = "start:\nnot not go to start\n"
-    result = Interpreter().run(source, max_steps=5)
-    assert result.terminated is False
-    assert result.reason == "step limit reached (5)"
+    with pytest.raises(ParseError, match="Infinite loop detected"):
+        Interpreter().compile(source)
+
+
+def test_external_goto_is_not_treated_as_local_infinite_loop(tmp_path: Path) -> None:
+    """Compiler allows unresolved external control flow without false positives."""
+
+    entry = tmp_path / "entry.goto"
+    entry.write_text("start:\ngoto next.goto\n", encoding="utf-8")
+    (tmp_path / "next.goto").write_text("done:\n", encoding="utf-8")
+
+    result = Interpreter().run_file(entry)
+    assert result.terminated is True
+    assert result.reason == "completed"
 
 
 def test_run_file_supports_cross_file_goto_without_label(tmp_path: Path) -> None:
