@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
-from .parser import ParseError, ParsedLine, parse_program
+from .parser import FILE_REFERENCE_PATTERN, ParseError, ParsedLine, parse_program
 
 
 @dataclass(frozen=True)
@@ -79,8 +80,34 @@ class Interpreter:
         program = self.compile(source)
         return self.run_program(program, max_steps=max_steps)
 
+    def run_file(self, source_path: Path | str, max_steps: int = 10_000) -> ExecutionResult:
+        """Execute a program loaded from disk, supporting cross-file gotos.
+
+        Args:
+            source_path: File path to the program entrypoint.
+            max_steps: Maximum executed instruction count.
+
+        Returns:
+            ExecutionResult with status and execution trace.
+        """
+
+        path = Path(source_path).resolve()
+        source = path.read_text(encoding="utf-8")
+        program = self.compile(source)
+        return self._run_with_context(program, max_steps=max_steps, current_path=path)
+
     def run_program(self, program: Program, max_steps: int = 10_000) -> ExecutionResult:
         """Execute a precompiled :class:`Program`."""
+
+        return self._run_with_context(program, max_steps=max_steps)
+
+    def _run_with_context(
+        self,
+        program: Program,
+        max_steps: int,
+        current_path: Path | None = None,
+    ) -> ExecutionResult:
+        """Execute a program, optionally allowing file-based goto targets."""
 
         ip = 0
         steps = 0
@@ -105,7 +132,19 @@ class Interpreter:
             elif statement.kind == "goto":
                 if statement.should_jump:
                     assert statement.argument is not None
-                    ip = program.labels[statement.argument]
+                    external_target = self._parse_external_target(statement.argument)
+                    if external_target is not None:
+                        if current_path is None:
+                            raise ParseError(
+                                "File-based goto requires execution from a file path."
+                            )
+                        program, ip, current_path = self._load_external_program(
+                            current_path,
+                            external_target[0],
+                            external_target[1],
+                        )
+                    else:
+                        ip = program.labels[statement.argument]
                 else:
                     ip += 1
             else:
@@ -118,6 +157,36 @@ class Interpreter:
             reason="completed",
             trace=trace,
         )
+
+    @staticmethod
+    def _parse_external_target(target: str) -> tuple[str, str | None] | None:
+        """Parse `<file>.goto` or `<file>.goto:<label>` goto targets."""
+
+        match = FILE_REFERENCE_PATTERN.match(target)
+        if not match:
+            return None
+        return match.group("file"), match.group("label")
+
+    def _load_external_program(
+        self,
+        current_path: Path,
+        file_target: str,
+        label_target: str | None,
+    ) -> tuple[Program, int, Path]:
+        """Load a target file and compute the target instruction pointer."""
+
+        target_path = (current_path.parent / file_target).resolve()
+        source = target_path.read_text(encoding="utf-8")
+        target_program = self.compile(source)
+
+        if label_target is None:
+            return target_program, 0, target_path
+
+        if label_target not in target_program.labels:
+            raise ParseError(
+                f"Unknown label '{label_target}' referenced in file '{file_target}'."
+            )
+        return target_program, target_program.labels[label_target], target_path
 
     @staticmethod
     def _append_statement(
@@ -159,11 +228,16 @@ class Interpreter:
     def _validate_goto_targets(
         statements: list[Statement], labels: dict[str, int]
     ) -> None:
-        """Ensure each goto instruction references a known label."""
+        """Ensure each goto instruction references a known local label or file target."""
 
         for statement in statements:
-            if statement.kind == "goto" and statement.argument not in labels:
-                raise ParseError(
-                    f"Unknown label '{statement.argument}' referenced "
-                    f"on line {statement.source_line}."
-                )
+            if statement.kind != "goto":
+                continue
+            if statement.argument in labels:
+                continue
+            if Interpreter._parse_external_target(statement.argument or "") is not None:
+                continue
+            raise ParseError(
+                f"Unknown label '{statement.argument}' referenced "
+                f"on line {statement.source_line}."
+            )

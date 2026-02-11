@@ -45,6 +45,21 @@ def test_parse_prefix_modifiers_update_jump_behavior() -> None:
     assert parsed[2].should_jump is True
 
 
+def test_parse_file_targets_with_or_without_label() -> None:
+    """Parser accepts `goto file.goto` and `goto file.goto:label` targets."""
+
+    parsed = parse_program("start:\ngoto next.goto\ngoto next.goto:entry\n")
+    assert parsed[1].goto_target == "next.goto"
+    assert parsed[2].goto_target == "next.goto:entry"
+
+
+def test_parse_file_and_label_with_space_separator() -> None:
+    """Parser normalizes `goto file.goto label` into colon form."""
+
+    parsed = parse_program("start:\ngoto next.goto entry\n")
+    assert parsed[1].goto_target == "next.goto:entry"
+
+
 def test_reject_invalid_expression() -> None:
     """Parser raises when expressions cannot be evaluated."""
 

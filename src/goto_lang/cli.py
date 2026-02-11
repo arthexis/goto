@@ -38,11 +38,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    source_code = args.source.read_text(encoding="utf-8")
     runtime = Interpreter()
 
     try:
-        result = runtime.run(source_code, max_steps=args.max_steps)
+        result = runtime.run_file(args.source, max_steps=args.max_steps)
     except ParseError as err:
         print(f"Parse error: {err}", file=sys.stderr)
         return 2

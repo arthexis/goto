@@ -1,5 +1,7 @@
 """Tests for goto language execution."""
 
+from pathlib import Path
+
 import pytest
 
 from goto_lang.interpreter import Interpreter
@@ -66,3 +68,43 @@ def test_even_not_modifiers_preserve_goto_jump() -> None:
     result = Interpreter().run(source, max_steps=5)
     assert result.terminated is False
     assert result.reason == "step limit reached (5)"
+
+
+def test_run_file_supports_cross_file_goto_without_label(tmp_path: Path) -> None:
+    """Interpreter loads and jumps into another file from a file-only target."""
+
+    entry = tmp_path / "entry.goto"
+    next_file = tmp_path / "next.goto"
+    entry.write_text("start:\ngoto next.goto\n", encoding="utf-8")
+    next_file.write_text("end:\n", encoding="utf-8")
+
+    result = Interpreter().run_file(entry, max_steps=10)
+    assert result.terminated is True
+    assert result.reason == "completed"
+    assert result.steps == 3
+
+
+def test_run_file_supports_cross_file_goto_with_label(tmp_path: Path) -> None:
+    """Interpreter can jump to a specific label inside another file."""
+
+    entry = tmp_path / "entry.goto"
+    next_file = tmp_path / "next.goto"
+    entry.write_text("start:\ngoto next.goto:target\n", encoding="utf-8")
+    next_file.write_text("before:\ntarget:\n", encoding="utf-8")
+
+    result = Interpreter().run_file(entry, max_steps=10)
+    assert result.terminated is True
+    assert result.reason == "completed"
+    assert result.steps == 3
+
+
+def test_run_file_raises_for_unknown_external_label(tmp_path: Path) -> None:
+    """Interpreter raises if a target file does not define the requested label."""
+
+    entry = tmp_path / "entry.goto"
+    next_file = tmp_path / "next.goto"
+    entry.write_text("start:\ngoto next.goto:missing\n", encoding="utf-8")
+    next_file.write_text("present:\n", encoding="utf-8")
+
+    with pytest.raises(ParseError, match="Unknown label 'missing'"):
+        Interpreter().run_file(entry)
