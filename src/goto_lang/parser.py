@@ -7,6 +7,9 @@ import re
 
 
 BARE_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+FILE_REFERENCE_PATTERN = re.compile(
+    r"^(?P<file>[A-Za-z0-9_./-]+\.goto)(?::(?P<label>[A-Za-z_][A-Za-z0-9_]*))?$"
+)
 GOTO_STATEMENT_PATTERN = re.compile(
     r"^(?P<prefix>(?:(?:do|please|not)\s+)*)"
     r"(?P<goto>goto|go\s+to)\s+"
@@ -30,12 +33,15 @@ class ParsedLine:
     should_jump: bool | None = None
 
 
-def _resolve_expression(expression: str, line_no: int) -> str:
+def _resolve_expression(
+    expression: str, line_no: int, allow_file_reference: bool = False
+) -> str:
     """Evaluate an expression and convert the result into a label string.
 
     Args:
         expression: Expression used in a label declaration or goto target.
         line_no: Source line number used for parse error messaging.
+        allow_file_reference: Whether file-based goto references are accepted.
 
     Returns:
         str: Stringified expression result used as the normalized label.
@@ -46,6 +52,19 @@ def _resolve_expression(expression: str, line_no: int) -> str:
 
     if BARE_LABEL_PATTERN.match(expression):
         return expression
+
+    if allow_file_reference:
+        match = FILE_REFERENCE_PATTERN.match(expression)
+        if match:
+            return expression
+
+        parts = expression.split()
+        if (
+            len(parts) == 2
+            and FILE_REFERENCE_PATTERN.match(parts[0])
+            and BARE_LABEL_PATTERN.match(parts[1])
+        ):
+            return f"{parts[0]}:{parts[1]}"
 
     try:
         return str(eval(expression))
@@ -100,7 +119,7 @@ def parse_program(source: str) -> list[ParsedLine]:
         if goto_match:
             prefix_words = goto_match.group("prefix").lower().split()
             expression = goto_match.group("expression").strip()
-            target = _resolve_expression(expression, line_no)
+            target = _resolve_expression(expression, line_no, allow_file_reference=True)
             should_jump = prefix_words.count("not") % 2 == 0
             parsed.append(
                 ParsedLine(
