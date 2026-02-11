@@ -4,7 +4,7 @@
 allowed constructs are:
 
 - label definitions (`<expression>:`)
-- unconditional jumps (`goto <expression>`)
+- unconditional jumps (`goto <expression>` / `go to <expression>`)
 
 It includes a parser, compiler/runtime, and CLI.
 
@@ -20,10 +20,13 @@ loop:
 Rules:
 
 1. Label declarations and `goto` targets are expressions.
-2. Expression results are converted to strings for label lookup.
-3. Duplicate label definitions are not allowed after expression resolution.
-4. `goto` targets must refer to an existing resolved label.
-5. Blank lines and lines beginning with `#` are ignored.
+2. `goto` may be written as `goto` or `go to` in any case.
+3. Optional words `do`, `please`, and `not` may appear before goto in any order.
+4. The number of `not` modifiers changes behavior: odd means no jump, even means jump.
+5. Expression results are converted to strings for label lookup.
+6. Duplicate label definitions are not allowed after expression resolution.
+7. `goto` targets must refer to an existing resolved label.
+8. Blank lines and lines beginning with `#` are ignored.
 
 ## Running
 
