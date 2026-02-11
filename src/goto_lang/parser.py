@@ -23,11 +23,11 @@ class ParsedLine:
     goto_target: str | None = None
 
 
-def _resolve_label_expression(expression: str, line_no: int) -> str:
-    """Evaluate a Python expression and convert the result into a label string.
+def _resolve_expression(expression: str, line_no: int) -> str:
+    """Evaluate an expression and convert the result into a label string.
 
     Args:
-        expression: Python expression used in a label declaration or goto target.
+        expression: Expression used in a label declaration or goto target.
         line_no: Source line number used for parse error messaging.
 
     Returns:
@@ -44,7 +44,7 @@ def _resolve_label_expression(expression: str, line_no: int) -> str:
         return str(eval(expression))
     except Exception as exc:  # pragma: no cover
         raise ParseError(
-            f"Invalid label expression on line {line_no}: '{expression}'."
+            f"Invalid expression on line {line_no}: '{expression}'."
         ) from exc
 
 
@@ -54,8 +54,8 @@ def parse_program(source: str) -> list[ParsedLine]:
     Blank lines and comments beginning with ``#`` are ignored.
     A non-empty line can be either:
 
-    - ``<python expression>:``
-    - ``goto <python expression>``
+    - ``<expression>:``
+    - ``goto <expression>``
 
     Args:
         source: Raw program source code.
@@ -75,13 +75,13 @@ def parse_program(source: str) -> list[ParsedLine]:
 
         if line.endswith(":"):
             expression = line[:-1].strip()
-            label = _resolve_label_expression(expression, line_no)
+            label = _resolve_expression(expression, line_no)
             parsed.append(ParsedLine(index=line_no, raw=raw_line, label=label))
             continue
 
         if line.startswith("goto "):
             expression = line[5:].strip()
-            target = _resolve_label_expression(expression, line_no)
+            target = _resolve_expression(expression, line_no)
             parsed.append(
                 ParsedLine(index=line_no, raw=raw_line, goto_target=target)
             )

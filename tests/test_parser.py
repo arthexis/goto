@@ -21,16 +21,16 @@ def test_reject_unknown_statement() -> None:
         parse_program("print hello")
 
 
-def test_parse_python_label_expressions() -> None:
-    """Parser resolves Python expressions and stringifies label values."""
+def test_parse_label_expressions() -> None:
+    """Parser resolves expressions and stringifies label values."""
 
     parsed = parse_program("\"a\" + \"b\":\ngoto 10 * 2\n")
     assert parsed[0].label == "ab"
     assert parsed[1].goto_target == "20"
 
 
-def test_reject_invalid_label_expression() -> None:
-    """Parser raises when label expressions cannot be evaluated."""
+def test_reject_invalid_expression() -> None:
+    """Parser raises when expressions cannot be evaluated."""
 
-    with pytest.raises(ParseError, match="Invalid label expression"):
+    with pytest.raises(ParseError, match="Invalid expression"):
         parse_program("goto unknown +")

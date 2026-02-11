@@ -3,8 +3,8 @@
 `goto-language` is a deliberately tiny programming language where the **only**
 allowed constructs are:
 
-- label definitions (`<python expression>:`)
-- unconditional jumps (`goto <python expression>`)
+- label definitions (`<expression>:`)
+- unconditional jumps (`goto <expression>`)
 
 It includes a parser, compiler/runtime, and CLI.
 
@@ -19,7 +19,7 @@ loop:
 
 Rules:
 
-1. Label declarations and `goto` targets are Python expressions.
+1. Label declarations and `goto` targets are expressions.
 2. Expression results are converted to strings for label lookup.
 3. Duplicate label definitions are not allowed after expression resolution.
 4. `goto` targets must refer to an existing resolved label.

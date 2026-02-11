@@ -41,7 +41,7 @@ def test_compile_rejects_duplicate_labels() -> None:
 
 
 def test_program_supports_expression_based_labels() -> None:
-    """Interpreter can jump using labels resolved from Python expressions."""
+    """Interpreter can jump using labels resolved from expressions."""
 
     source = "\"start\":\ngoto \"s\" + \"tart\"\n"
     result = Interpreter().run(source, max_steps=4)
