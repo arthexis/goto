@@ -1,0 +1,4 @@
+start:
+goto loop
+loop:
+goto loop
