@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import re
 
 
-LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+BARE_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 class ParseError(ValueError):
@@ -23,11 +23,29 @@ class ParsedLine:
     goto_target: str | None = None
 
 
-def _validate_label(name: str, line_no: int) -> None:
-    """Validate a label name and raise :class:`ParseError` when invalid."""
+def _resolve_label_expression(expression: str, line_no: int) -> str:
+    """Evaluate a Python expression and convert the result into a label string.
 
-    if not LABEL_PATTERN.match(name):
-        raise ParseError(f"Invalid label name '{name}' on line {line_no}.")
+    Args:
+        expression: Python expression used in a label declaration or goto target.
+        line_no: Source line number used for parse error messaging.
+
+    Returns:
+        str: Stringified expression result used as the normalized label.
+
+    Raises:
+        ParseError: If the expression cannot be evaluated.
+    """
+
+    if BARE_LABEL_PATTERN.match(expression):
+        return expression
+
+    try:
+        return str(eval(expression))
+    except Exception as exc:  # pragma: no cover
+        raise ParseError(
+            f"Invalid label expression on line {line_no}: '{expression}'."
+        ) from exc
 
 
 def parse_program(source: str) -> list[ParsedLine]:
@@ -36,8 +54,8 @@ def parse_program(source: str) -> list[ParsedLine]:
     Blank lines and comments beginning with ``#`` are ignored.
     A non-empty line can be either:
 
-    - ``label:``
-    - ``goto label``
+    - ``<python expression>:``
+    - ``goto <python expression>``
 
     Args:
         source: Raw program source code.
@@ -56,14 +74,14 @@ def parse_program(source: str) -> list[ParsedLine]:
             continue
 
         if line.endswith(":"):
-            label = line[:-1].strip()
-            _validate_label(label, line_no)
+            expression = line[:-1].strip()
+            label = _resolve_label_expression(expression, line_no)
             parsed.append(ParsedLine(index=line_no, raw=raw_line, label=label))
             continue
 
         if line.startswith("goto "):
-            target = line[5:].strip()
-            _validate_label(target, line_no)
+            expression = line[5:].strip()
+            target = _resolve_label_expression(expression, line_no)
             parsed.append(
                 ParsedLine(index=line_no, raw=raw_line, goto_target=target)
             )
