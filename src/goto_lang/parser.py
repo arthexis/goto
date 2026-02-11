@@ -7,6 +7,12 @@ import re
 
 
 BARE_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+GOTO_STATEMENT_PATTERN = re.compile(
+    r"^(?P<prefix>(?:(?:do|please|not)\s+)*)"
+    r"(?P<goto>goto|go\s+to)\s+"
+    r"(?P<expression>.+)$",
+    re.IGNORECASE,
+)
 
 
 class ParseError(ValueError):
@@ -21,6 +27,7 @@ class ParsedLine:
     raw: str
     label: str | None = None
     goto_target: str | None = None
+    should_jump: bool | None = None
 
 
 def _resolve_expression(expression: str, line_no: int) -> str:
@@ -55,7 +62,17 @@ def parse_program(source: str) -> list[ParsedLine]:
     A non-empty line can be either:
 
     - ``<expression>:``
-    - ``goto <expression>``
+    - ``goto <expression>`` (also ``go to <expression>``, any case)
+
+    Optional modifier words may appear before goto:
+
+    - ``do``
+    - ``please``
+    - ``not``
+
+    The first two are accepted as no-ops. The number of ``not`` modifiers
+    controls whether a jump occurs: an odd count suppresses the jump, and an
+    even count executes it.
 
     Args:
         source: Raw program source code.
@@ -79,11 +96,19 @@ def parse_program(source: str) -> list[ParsedLine]:
             parsed.append(ParsedLine(index=line_no, raw=raw_line, label=label))
             continue
 
-        if line.startswith("goto "):
-            expression = line[5:].strip()
+        goto_match = GOTO_STATEMENT_PATTERN.match(line)
+        if goto_match:
+            prefix_words = goto_match.group("prefix").lower().split()
+            expression = goto_match.group("expression").strip()
             target = _resolve_expression(expression, line_no)
+            should_jump = prefix_words.count("not") % 2 == 0
             parsed.append(
-                ParsedLine(index=line_no, raw=raw_line, goto_target=target)
+                ParsedLine(
+                    index=line_no,
+                    raw=raw_line,
+                    goto_target=target,
+                    should_jump=should_jump,
+                )
             )
             continue
 

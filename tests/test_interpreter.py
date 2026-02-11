@@ -47,3 +47,22 @@ def test_program_supports_expression_based_labels() -> None:
     result = Interpreter().run(source, max_steps=4)
     assert result.terminated is False
     assert result.reason == "step limit reached (4)"
+
+
+def test_not_modifier_suppresses_goto_jump() -> None:
+    """A goto with odd number of `not` modifiers does not jump."""
+
+    source = "start:\nnot goto start\n"
+    result = Interpreter().run(source, max_steps=10)
+    assert result.terminated is True
+    assert result.reason == "completed"
+    assert result.steps == 2
+
+
+def test_even_not_modifiers_preserve_goto_jump() -> None:
+    """A goto with even number of `not` modifiers still jumps."""
+
+    source = "start:\nnot not go to start\n"
+    result = Interpreter().run(source, max_steps=5)
+    assert result.terminated is False
+    assert result.reason == "step limit reached (5)"

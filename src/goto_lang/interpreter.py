@@ -14,6 +14,7 @@ class Statement:
     kind: str
     argument: str | None
     source_line: int
+    should_jump: bool = True
 
 
 @dataclass(frozen=True)
@@ -102,8 +103,11 @@ class Interpreter:
             if statement.kind == "label":
                 ip += 1
             elif statement.kind == "goto":
-                assert statement.argument is not None
-                ip = program.labels[statement.argument]
+                if statement.should_jump:
+                    assert statement.argument is not None
+                    ip = program.labels[statement.argument]
+                else:
+                    ip += 1
             else:
                 raise RuntimeError(f"Unknown statement kind '{statement.kind}'.")
 
@@ -130,13 +134,22 @@ class Interpreter:
                 )
             labels[line.label] = len(statements)
             statements.append(
-                Statement(kind="label", argument=line.label, source_line=line.index)
+                Statement(
+                    kind="label",
+                    argument=line.label,
+                    source_line=line.index,
+                )
             )
             return
 
         if line.goto_target is not None:
             statements.append(
-                Statement(kind="goto", argument=line.goto_target, source_line=line.index)
+                Statement(
+                    kind="goto",
+                    argument=line.goto_target,
+                    should_jump=line.should_jump is not False,
+                    source_line=line.index,
+                )
             )
             return
 
