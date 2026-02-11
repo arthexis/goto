@@ -29,7 +29,8 @@ Rules:
 7. `goto` targets may refer to a local label, a file (`<file>.goto`), or a file label (`<file>.goto:<label>`).
 8. `goto <file>.goto <label>` is accepted and normalized to `goto <file>.goto:<label>`.
 9. Local `goto` targets must refer to an existing resolved label.
-10. Blank lines and lines beginning with `#` are ignored.
+10. Programs whose local control flow is provably infinite are rejected at compile time.
+11. Blank lines and lines beginning with `#` are ignored.
 
 ## Running
 

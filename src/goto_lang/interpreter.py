@@ -61,6 +61,7 @@ class Interpreter:
             self._append_statement(line, statements, labels)
 
         self._validate_goto_targets(statements, labels)
+        self._validate_not_guaranteed_infinite(statements, labels)
         return Program(statements=statements, labels=labels)
 
     def run(self, source: str, max_steps: int = 10_000) -> ExecutionResult:
@@ -241,3 +242,51 @@ class Interpreter:
                 f"Unknown label '{statement.argument}' referenced "
                 f"on line {statement.source_line}."
             )
+
+    @staticmethod
+    def _validate_not_guaranteed_infinite(
+        statements: list[Statement], labels: dict[str, int]
+    ) -> None:
+        """Reject programs whose local control flow is provably non-terminating.
+
+        The goto language has deterministic control flow for local jumps, so from
+        any instruction there is exactly one next instruction pointer. A program
+        terminates only when the pointer falls past the final statement.
+
+        This validator follows the local control-flow path from instruction ``0``.
+        If it revisits an instruction before leaving the program, termination is
+        impossible and compilation fails.
+        """
+
+        if not statements:
+            return
+
+        seen_instruction_pointers: set[int] = set()
+        instruction_pointer = 0
+
+        while instruction_pointer < len(statements):
+            if instruction_pointer in seen_instruction_pointers:
+                looping_statement = statements[instruction_pointer]
+                raise ParseError(
+                    "Infinite loop detected at "
+                    f"line {looping_statement.source_line}."
+                )
+
+            seen_instruction_pointers.add(instruction_pointer)
+            statement = statements[instruction_pointer]
+
+            if statement.kind == "label":
+                instruction_pointer += 1
+                continue
+
+            if statement.kind != "goto":
+                raise RuntimeError(f"Unknown statement kind '{statement.kind}'.")
+
+            if not statement.should_jump:
+                instruction_pointer += 1
+                continue
+
+            target = statement.argument or ""
+            if Interpreter._parse_external_target(target) is not None:
+                return
+            instruction_pointer = labels[target]
