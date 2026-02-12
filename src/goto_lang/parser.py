@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 import re
 
@@ -66,12 +67,99 @@ def _resolve_expression(
         ):
             return f"{parts[0]}:{parts[1]}"
 
+    return _safe_eval_expression(expression, line_no)
+
+
+def _safe_eval_expression(expression: str, line_no: int) -> str:
+    """Evaluate a constrained expression and return its string value.
+
+    Supported syntax includes constants, string concatenation, numeric
+    arithmetic, and unary +/- operators. Any unsupported syntax is rejected
+    with a line-aware parse error.
+
+    Args:
+        expression: Expression used in a label declaration or goto target.
+        line_no: Source line number used for parse error messaging.
+
+    Returns:
+        Stringified expression result used as the normalized label.
+
+    Raises:
+        ParseError: If the expression uses unsupported syntax.
+    """
+
+    def invalid_expression_error() -> ParseError:
+        return ParseError(f"Invalid expression on line {line_no}: '{expression}'.")
+
+    def eval_node(node: ast.AST) -> object:
+        """Recursively evaluate a supported AST node."""
+
+        if isinstance(node, ast.Expression):
+            return eval_node(node.body)
+
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, (str, int, float, bool, type(None))):
+                return node.value
+            raise invalid_expression_error()
+
+        if isinstance(node, ast.UnaryOp):
+            value = eval_node(node.operand)
+            if isinstance(node.op, ast.UAdd):
+                if isinstance(value, (int, float)):
+                    return +value
+                raise invalid_expression_error()
+            if isinstance(node.op, ast.USub):
+                if isinstance(value, (int, float)):
+                    return -value
+                raise invalid_expression_error()
+            raise invalid_expression_error()
+
+        if isinstance(node, ast.BinOp):
+            left = eval_node(node.left)
+            right = eval_node(node.right)
+            op = node.op
+
+            if isinstance(op, ast.Add):
+                if isinstance(left, str) and isinstance(right, str):
+                    return left + right
+                if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                    return left + right
+                raise invalid_expression_error()
+            if isinstance(op, ast.Sub):
+                if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                    return left - right
+                raise invalid_expression_error()
+            if isinstance(op, ast.Mult):
+                if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                    return left * right
+                raise invalid_expression_error()
+            if isinstance(op, ast.Div):
+                if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                    return left / right
+                raise invalid_expression_error()
+            if isinstance(op, ast.FloorDiv):
+                if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                    return left // right
+                raise invalid_expression_error()
+            if isinstance(op, ast.Mod):
+                if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                    return left % right
+                raise invalid_expression_error()
+            if isinstance(op, ast.Pow):
+                if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                    return left**right
+                raise invalid_expression_error()
+            raise invalid_expression_error()
+
+        raise invalid_expression_error()
+
     try:
-        return str(eval(expression))
-    except Exception as exc:  # pragma: no cover
-        raise ParseError(
-            f"Invalid expression on line {line_no}: '{expression}'."
-        ) from exc
+        tree = ast.parse(expression, mode="eval")
+        return str(eval_node(tree))
+    except ParseError:
+        raise
+    except Exception as exc:
+        raise invalid_expression_error() from exc
 
 
 def parse_program(source: str) -> list[ParsedLine]:

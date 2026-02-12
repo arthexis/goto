@@ -22,11 +22,17 @@ def test_reject_unknown_statement() -> None:
 
 
 def test_parse_label_expressions() -> None:
-    """Parser resolves expressions and stringifies label values."""
+    """Parser resolves string concatenation and stringifies label values."""
 
-    parsed = parse_program("\"a\" + \"b\":\ngoto 10 * 2\n")
+    parsed = parse_program("\"a\" + \"b\":\n")
     assert parsed[0].label == "ab"
-    assert parsed[1].goto_target == "20"
+
+
+def test_parse_numeric_expressions() -> None:
+    """Parser resolves numeric arithmetic expressions."""
+
+    parsed = parse_program("start:\ngoto 10 * 2 + 5\n")
+    assert parsed[1].goto_target == "25"
 
 
 def test_parse_case_insensitive_goto_and_go_to() -> None:
@@ -65,3 +71,10 @@ def test_reject_invalid_expression() -> None:
 
     with pytest.raises(ParseError, match="Invalid expression"):
         parse_program("goto unknown +")
+
+
+def test_reject_dangerous_expression_calls() -> None:
+    """Parser rejects expressions that attempt to execute code via calls."""
+
+    with pytest.raises(ParseError, match="Invalid expression"):
+        parse_program('goto __import__("os").system("echo hacked")')
