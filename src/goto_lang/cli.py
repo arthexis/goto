@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--trace",
         action="store_true",
-        help="Print executed source line numbers.",
+        help="Print executed source locations as file:line.",
     )
     parser.add_argument(
         "--check",
@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     if args.trace:
-        trace_rendered = ", ".join(str(line) for line in result.trace)
+        trace_rendered = ", ".join(f"{event.file}:{event.line}" for event in result.trace)
         print(f"Trace: [{trace_rendered}]")
 
     return 0 if result.terminated else 1

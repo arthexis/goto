@@ -64,3 +64,17 @@ def test_normal_run_exit_codes_remain_unchanged(tmp_path: Path, capsys) -> None:
     assert loop_code == 1
     assert "Program stopped" in loop_output.out
     assert loop_output.err == ""
+
+
+def test_trace_renders_file_and_line_locations(tmp_path: Path, capsys) -> None:
+    """`--trace` output prints source locations as file:line entries."""
+
+    source_path = tmp_path / "trace.goto"
+    _write_source(source_path, "start:\n")
+
+    code = main([str(source_path), "--trace"])
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert f"Trace: [{source_path.resolve()}:1]" in captured.out
+    assert captured.err == ""
