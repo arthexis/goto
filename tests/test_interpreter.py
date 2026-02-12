@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from goto_lang.interpreter import Interpreter
+from goto_lang.interpreter import Interpreter, TraceEvent
 from goto_lang.parser import ParseError
 
 
@@ -116,3 +116,28 @@ def test_run_file_raises_for_unknown_external_label(tmp_path: Path) -> None:
 
     with pytest.raises(ParseError, match="Unknown label 'missing'"):
         Interpreter().run_file(entry)
+
+
+def test_run_trace_uses_memory_sentinel_for_in_memory_execution() -> None:
+    """In-memory execution traces report the sentinel source path."""
+
+    result = Interpreter().run("start:\n", max_steps=10)
+
+    assert result.trace == [TraceEvent(file="<memory>", line=1)]
+
+
+def test_run_file_trace_captures_file_and_line_across_external_goto(tmp_path: Path) -> None:
+    """Trace events include file paths and lines across file transitions."""
+
+    entry = tmp_path / "entry.goto"
+    next_file = tmp_path / "next.goto"
+    entry.write_text("start:\ngoto next.goto\n", encoding="utf-8")
+    next_file.write_text("target:\n", encoding="utf-8")
+
+    result = Interpreter().run_file(entry, max_steps=10)
+
+    assert result.trace == [
+        TraceEvent(file=str(entry.resolve()), line=1),
+        TraceEvent(file=str(entry.resolve()), line=2),
+        TraceEvent(file=str(next_file.resolve()), line=1),
+    ]

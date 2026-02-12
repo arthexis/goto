@@ -67,3 +67,8 @@ Exit codes:
 
 Because the language has only labels and unconditional jumps, control flow is
 explicit and there is no mutable state in the core language.
+
+## Backward compatibility notes
+
+- Trace output now reports source locations as `file:line` entries instead of plain line numbers.
+- In-memory execution via `Interpreter.run(...)` uses `"<memory>"` as the trace file sentinel.

@@ -34,7 +34,15 @@ class ExecutionResult:
     steps: int
     instruction_pointer: int
     reason: str
-    trace: list[int]
+    trace: list[TraceEvent]
+
+
+@dataclass(frozen=True)
+class TraceEvent:
+    """One executed source location in an execution trace."""
+
+    file: str
+    line: int
 
 
 class Interpreter:
@@ -129,7 +137,8 @@ class Interpreter:
 
         ip = 0
         steps = 0
-        trace: list[int] = []
+        trace: list[TraceEvent] = []
+        default_trace_file = str(current_path) if current_path is not None else "<memory>"
 
         while ip < len(program.statements):
             if steps >= max_steps:
@@ -142,7 +151,8 @@ class Interpreter:
                 )
 
             statement = program.statements[ip]
-            trace.append(statement.source_line)
+            trace_file = str(current_path) if current_path is not None else default_trace_file
+            trace.append(TraceEvent(file=trace_file, line=statement.source_line))
             steps += 1
 
             if statement.kind == "label":
