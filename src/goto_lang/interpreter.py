@@ -97,6 +97,23 @@ class Interpreter:
         program = self.compile(source)
         return self._run_with_context(program, max_steps=max_steps, current_path=path)
 
+    def compile_file(self, source_path: Path | str) -> Program:
+        """Compile a program loaded from disk.
+
+        Args:
+            source_path: File path to source code.
+
+        Returns:
+            Program: Compiled instructions and label table.
+
+        Raises:
+            ParseError: If syntax or label references are invalid.
+        """
+
+        path = Path(source_path).resolve()
+        source = path.read_text(encoding="utf-8")
+        return self.compile(source)
+
     def run_program(self, program: Program, max_steps: int = 10_000) -> ExecutionResult:
         """Execute a precompiled :class:`Program`."""
 

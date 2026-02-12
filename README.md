@@ -51,11 +51,17 @@ Run a program:
 goto-lang examples/loop.goto --max-steps 20 --trace
 ```
 
+Compile-check without running:
+
+```bash
+goto-lang examples/terminate.goto --check
+```
+
 Exit codes:
 
-- `0`: program terminated by falling past the final statement.
-- `1`: execution stopped due to step limit.
-- `2`: parse/compile error.
+- `0`: successful run termination, or successful `--check` compilation.
+- `1`: execution stopped due to step limit (run mode only).
+- `2`: parse/compile error (including `--check`).
 
 ## Design notes
 

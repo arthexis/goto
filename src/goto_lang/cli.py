@@ -29,6 +29,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print executed source line numbers.",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Compile the source file without running it.",
+    )
     return parser
 
 
@@ -41,6 +46,11 @@ def main(argv: list[str] | None = None) -> int:
     runtime = Interpreter()
 
     try:
+        if args.check:
+            runtime.compile_file(args.source)
+            print("Check successful.")
+            return 0
+
         result = runtime.run_file(args.source, max_steps=args.max_steps)
     except ParseError as err:
         print(f"Parse error: {err}", file=sys.stderr)
