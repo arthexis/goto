@@ -21,16 +21,21 @@ loop:
 Rules:
 
 1. Label declarations and `goto` targets are expressions.
-2. `goto` may be written as `goto` or `go to` in any case.
-3. Optional words `do`, `please`, and `not` may appear before goto in any order.
-4. The number of `not` modifiers changes behavior: odd means no jump, even means jump.
-5. Expression results are converted to strings for label lookup.
-6. Duplicate label definitions are not allowed after expression resolution.
-7. `goto` targets may refer to a local label, a file (`<file>.goto`), or a file label (`<file>.goto:<label>`).
-8. `goto <file>.goto <label>` is accepted and normalized to `goto <file>.goto:<label>`.
-9. Local `goto` targets must refer to an existing resolved label.
-10. Programs whose local control flow is provably infinite are rejected at compile time.
-11. Blank lines and lines beginning with `#` are ignored.
+2. Supported expressions are intentionally limited to:
+   - constants (`"text"`, `123`, `4.5`, `True`, `False`, `None`)
+   - unary numeric `+` / `-`
+   - binary arithmetic `+`, `-`, `*`, `/`, `//`, `%`, `**`
+   - string concatenation via `"a" + "b"`
+3. Bare labels like `start` are still accepted directly, and `goto` also supports file targets (`<file>.goto`, `<file>.goto:<label>`, and `<file>.goto <label>`).
+4. Names, function calls, attribute access, comprehensions, imports, and other Python syntax are rejected.
+5. `goto` may be written as `goto` or `go to` in any case.
+6. Optional words `do`, `please`, and `not` may appear before goto in any order.
+7. The number of `not` modifiers changes behavior: odd means no jump, even means jump.
+8. Expression results are converted to strings for label lookup.
+9. Duplicate label definitions are not allowed after expression resolution.
+10. Local `goto` targets must refer to an existing resolved label.
+11. Programs whose local control flow is provably infinite are rejected at compile time.
+12. Blank lines and lines beginning with `#` are ignored.
 
 ## Running
 
