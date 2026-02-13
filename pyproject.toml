@@ -9,6 +9,12 @@ description = "A minimal programming language containing only labels and goto st
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{name = "Goto Language Authors"}]
+license = {file = "LICENSE"}
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+]
 dependencies = []
 
 [project.scripts]
