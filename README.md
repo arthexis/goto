@@ -63,6 +63,24 @@ Exit codes:
 - `1`: execution stopped due to step limit (run mode only).
 - `2`: parse/compile error (including `--check`).
 
+## Development
+
+Install in editable mode with test tooling:
+
+```bash
+pip install -e .
+```
+
+Run tests:
+
+```bash
+pytest -q
+```
+
+## License
+
+This project is distributed under the MIT License. See [LICENSE](LICENSE) for details.
+
 ## Design notes
 
 Because the language has only labels and unconditional jumps, control flow is
