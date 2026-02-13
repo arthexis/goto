@@ -17,7 +17,7 @@ def test_parse_valid_program() -> None:
 def test_reject_unknown_statement() -> None:
     """Parser rejects statements other than labels and goto."""
 
-    with pytest.raises(ParseError, match="Only labels and goto"):
+    with pytest.raises(ParseError, match="Unexpected statement"):
         parse_program("print hello")
 
 
@@ -78,3 +78,26 @@ def test_reject_dangerous_expression_calls() -> None:
 
     with pytest.raises(ParseError, match="Invalid expression"):
         parse_program('goto __import__("os").system("echo hacked")')
+
+
+def test_invalid_expression_error_contains_source_context() -> None:
+    """Parser error output includes source line snippets and caret markers."""
+
+    with pytest.raises(ParseError) as exc_info:
+        parse_program("goto unknown +")
+
+    message = str(exc_info.value)
+    assert "Invalid expression (line 1)" in message
+    assert "1 | goto unknown +" in message
+    assert "|      ^^^^^^^^^" in message
+
+
+def test_malformed_file_reference_error_contains_context() -> None:
+    """Malformed file references are called out with contextual snippets."""
+
+    with pytest.raises(ParseError) as exc_info:
+        parse_program("goto bad file.goto target")
+
+    message = str(exc_info.value)
+    assert "Malformed file reference expression" in message
+    assert "1 | goto bad file.goto target" in message

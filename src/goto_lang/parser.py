@@ -34,8 +34,45 @@ class ParsedLine:
     should_jump: bool | None = None
 
 
+def _format_parse_error(
+    message: str,
+    *,
+    line_no: int,
+    source_line: str,
+    span: tuple[int, int] | None = None,
+) -> str:
+    """Build a parse error message with source context.
+
+    Args:
+        message: Human-readable error summary.
+        line_no: One-based source line number.
+        source_line: Raw source text for the line that failed parsing.
+        span: Optional ``(start, end)`` bounds for the problematic segment,
+            expressed as zero-based character offsets into ``source_line``.
+
+    Returns:
+        A formatted parse error message that includes line number, source line,
+        and optional caret markers for highlighted spans.
+    """
+
+    formatted = [f"{message} (line {line_no})", f"{line_no} | {source_line}"]
+    if span is not None:
+        start, end = span
+        safe_start = max(0, min(start, len(source_line)))
+        safe_end = max(safe_start + 1, min(max(end, safe_start + 1), len(source_line)))
+        padding = " " * safe_start
+        marker = "^" * (safe_end - safe_start)
+        formatted.append(f"{' ' * len(str(line_no))} | {padding}{marker}")
+    return "\n".join(formatted)
+
+
 def _resolve_expression(
-    expression: str, line_no: int, allow_file_reference: bool = False
+    expression: str,
+    line_no: int,
+    *,
+    source_line: str,
+    span: tuple[int, int] | None = None,
+    allow_file_reference: bool = False,
 ) -> str:
     """Evaluate an expression and convert the result into a label string.
 
@@ -67,10 +104,31 @@ def _resolve_expression(
         ):
             return f"{parts[0]}:{parts[1]}"
 
-    return _safe_eval_expression(expression, line_no)
+        if ".goto" in expression:
+            raise ParseError(
+                _format_parse_error(
+                    "Malformed file reference expression",
+                    line_no=line_no,
+                    source_line=source_line,
+                    span=span,
+                )
+            )
+
+    return _safe_eval_expression(
+        expression,
+        line_no,
+        source_line=source_line,
+        span=span,
+    )
 
 
-def _safe_eval_expression(expression: str, line_no: int) -> str:
+def _safe_eval_expression(
+    expression: str,
+    line_no: int,
+    *,
+    source_line: str,
+    span: tuple[int, int] | None = None,
+) -> str:
     """Evaluate a constrained expression and return its string value.
 
     Supported syntax includes constants, string concatenation, numeric
@@ -89,7 +147,14 @@ def _safe_eval_expression(expression: str, line_no: int) -> str:
     """
 
     def invalid_expression_error() -> ParseError:
-        return ParseError(f"Invalid expression on line {line_no}: '{expression}'.")
+        return ParseError(
+            _format_parse_error(
+                "Invalid expression",
+                line_no=line_no,
+                source_line=source_line,
+                span=span,
+            )
+        )
 
     def eval_node(node: ast.AST) -> object:
         """Recursively evaluate a supported AST node."""
@@ -199,7 +264,13 @@ def parse_program(source: str) -> list[ParsedLine]:
 
         if line.endswith(":"):
             expression = line[:-1].strip()
-            label = _resolve_expression(expression, line_no)
+            expression_start = raw_line.find(expression)
+            label = _resolve_expression(
+                expression,
+                line_no,
+                source_line=raw_line,
+                span=(expression_start, expression_start + len(expression)),
+            )
             parsed.append(ParsedLine(index=line_no, raw=raw_line, label=label))
             continue
 
@@ -207,7 +278,14 @@ def parse_program(source: str) -> list[ParsedLine]:
         if goto_match:
             prefix_words = goto_match.group("prefix").lower().split()
             expression = goto_match.group("expression").strip()
-            target = _resolve_expression(expression, line_no, allow_file_reference=True)
+            expression_start = raw_line.find(expression)
+            target = _resolve_expression(
+                expression,
+                line_no,
+                source_line=raw_line,
+                span=(expression_start, expression_start + len(expression)),
+                allow_file_reference=True,
+            )
             should_jump = prefix_words.count("not") % 2 == 0
             parsed.append(
                 ParsedLine(
@@ -220,8 +298,11 @@ def parse_program(source: str) -> list[ParsedLine]:
             continue
 
         raise ParseError(
-            f"Unexpected statement on line {line_no}: '{raw_line}'. "
-            "Only labels and goto statements are allowed."
+            _format_parse_error(
+                "Unexpected statement. Only labels and goto statements are allowed.",
+                line_no=line_no,
+                source_line=raw_line,
+            )
         )
 
     return parsed
