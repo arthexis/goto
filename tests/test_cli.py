@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from goto_lang.cli import main
 
 
@@ -78,3 +80,29 @@ def test_trace_renders_file_and_line_locations(tmp_path: Path, capsys) -> None:
     assert code == 0
     assert f"Trace: [{source_path.resolve()}:1]" in captured.out
     assert captured.err == ""
+
+
+def test_inspect_prints_compiled_labels_and_statements(tmp_path: Path, capsys) -> None:
+    """`--inspect` prints compiled labels and statement metadata."""
+
+    source_path = tmp_path / "inspect.goto"
+    _write_source(source_path, '"s" + "tart":\nnot goto "s" + "tart"\n')
+
+    code = main([str(source_path), "--inspect"])
+    captured = capsys.readouterr()
+
+    assert code == 0
+    assert "Labels: start->0" in captured.out
+    assert "[0] label 'start' line=1" in captured.out
+    assert "[1] goto 'start' line=2 no-jump" in captured.out
+    assert captured.err == ""
+
+
+def test_check_and_inspect_are_mutually_exclusive(tmp_path: Path) -> None:
+    """`--check` and `--inspect` cannot be provided together."""
+
+    source_path = tmp_path / "mode.goto"
+    _write_source(source_path, "start:\n")
+
+    with pytest.raises(SystemExit, match="2"):
+        main([str(source_path), "--check", "--inspect"])
