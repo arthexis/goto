@@ -78,3 +78,11 @@ def test_reject_dangerous_expression_calls() -> None:
 
     with pytest.raises(ParseError, match="Invalid expression"):
         parse_program('goto __import__("os").system("echo hacked")')
+
+
+def test_parse_targetless_goto() -> None:
+    """Parser accepts goto without a target expression."""
+
+    parsed = parse_program("entry:\ngoto\n")
+    assert parsed[1].is_goto is True
+    assert parsed[1].goto_target is None

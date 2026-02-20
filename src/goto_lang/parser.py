@@ -13,8 +13,7 @@ FILE_REFERENCE_PATTERN = re.compile(
 )
 GOTO_STATEMENT_PATTERN = re.compile(
     r"^(?P<prefix>(?:(?:do|please|not)\s+)*)"
-    r"(?P<goto>goto|go\s+to)\s+"
-    r"(?P<expression>.+)$",
+    r"(?P<goto>goto|go\s+to)(?:\s+(?P<expression>.+))?$",
     re.IGNORECASE,
 )
 
@@ -30,6 +29,7 @@ class ParsedLine:
     index: int
     raw: str
     label: str | None = None
+    is_goto: bool = False
     goto_target: str | None = None
     should_jump: bool | None = None
 
@@ -206,13 +206,18 @@ def parse_program(source: str) -> list[ParsedLine]:
         goto_match = GOTO_STATEMENT_PATTERN.match(line)
         if goto_match:
             prefix_words = goto_match.group("prefix").lower().split()
-            expression = goto_match.group("expression").strip()
-            target = _resolve_expression(expression, line_no, allow_file_reference=True)
+            expression = (goto_match.group("expression") or "").strip()
+            target = (
+                _resolve_expression(expression, line_no, allow_file_reference=True)
+                if expression
+                else None
+            )
             should_jump = prefix_words.count("not") % 2 == 0
             parsed.append(
                 ParsedLine(
                     index=line_no,
                     raw=raw_line,
+                    is_goto=True,
                     goto_target=target,
                     should_jump=should_jump,
                 )

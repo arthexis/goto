@@ -24,6 +24,7 @@ class Program:
 
     statements: list[Statement]
     labels: dict[str, int]
+    label_stack: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -69,8 +70,8 @@ class Interpreter:
             self._append_statement(line, statements, labels)
 
         self._validate_goto_targets(statements, labels)
-        self._validate_not_guaranteed_infinite(statements, labels)
-        return Program(statements=statements, labels=labels)
+        self._validate_not_guaranteed_infinite(statements, labels, ())
+        return Program(statements=statements, labels=labels, label_stack=())
 
     def run(self, source: str, max_steps: int = 10_000) -> ExecutionResult:
         """Execute source code with a step limit.
@@ -138,6 +139,7 @@ class Interpreter:
         ip = 0
         steps = 0
         trace: list[TraceEvent] = []
+        label_stack = list(program.label_stack)
         default_trace_file = str(current_path) if current_path is not None else "<memory>"
 
         while ip < len(program.statements):
@@ -156,11 +158,25 @@ class Interpreter:
             steps += 1
 
             if statement.kind == "label":
+                assert statement.argument is not None
+                label_stack.append(statement.argument)
                 ip += 1
             elif statement.kind == "goto":
                 if statement.should_jump:
-                    assert statement.argument is not None
-                    external_target = self._parse_external_target(statement.argument)
+                    target = statement.argument
+                    if target is None:
+                        if not label_stack:
+                            raise ParseError(
+                                f"Cannot execute targetless goto on line {statement.source_line} "
+                                "before any labels are encountered."
+                            )
+                        label_stack.pop()
+                        target = label_stack[-1] if label_stack else None
+                        if target is None:
+                            ip += 1
+                            continue
+
+                    external_target = self._parse_external_target(target)
                     if external_target is not None:
                         if current_path is None:
                             raise ParseError(
@@ -172,7 +188,7 @@ class Interpreter:
                             external_target[1],
                         )
                     else:
-                        ip = program.labels[statement.argument]
+                        ip = program.labels[target]
                 else:
                     ip += 1
             else:
@@ -239,7 +255,7 @@ class Interpreter:
             )
             return
 
-        if line.goto_target is not None:
+        if line.is_goto:
             statements.append(
                 Statement(
                     kind="goto",
@@ -252,6 +268,7 @@ class Interpreter:
 
         raise ParseError(f"Line {line.index} is neither label nor goto.")
 
+
     @staticmethod
     def _validate_goto_targets(
         statements: list[Statement], labels: dict[str, int]
@@ -261,9 +278,11 @@ class Interpreter:
         for statement in statements:
             if statement.kind != "goto":
                 continue
+            if statement.argument is None:
+                continue
             if statement.argument in labels:
                 continue
-            if Interpreter._parse_external_target(statement.argument or "") is not None:
+            if Interpreter._parse_external_target(statement.argument) is not None:
                 continue
             raise ParseError(
                 f"Unknown label '{statement.argument}' referenced "
@@ -272,37 +291,76 @@ class Interpreter:
 
     @staticmethod
     def _validate_not_guaranteed_infinite(
-        statements: list[Statement], labels: dict[str, int]
+        statements: list[Statement],
+        labels: dict[str, int],
+        label_stack: tuple[str, ...],
     ) -> None:
-        """Reject programs whose local control flow is provably non-terminating.
+        """Reject programs whose local control flow is provably non-terminating."""
 
-        The goto language has deterministic control flow for local jumps, so from
-        any instruction there is exactly one next instruction pointer. A program
-        terminates only when the pointer falls past the final statement.
-
-        This validator follows the local control-flow path from instruction ``0``.
-        If it revisits an instruction before leaving the program, termination is
-        impossible and compilation fails.
-        """
+        del label_stack
 
         if not statements:
             return
 
-        seen_instruction_pointers: set[int] = set()
+        has_targetless_goto = any(
+            statement.kind == "goto" and statement.argument is None
+            for statement in statements
+        )
+        if not has_targetless_goto:
+            seen_instruction_pointers: set[int] = set()
+            instruction_pointer = 0
+            while instruction_pointer < len(statements):
+                if instruction_pointer in seen_instruction_pointers:
+                    looping_statement = statements[instruction_pointer]
+                    raise ParseError(
+                        "Infinite loop detected at "
+                        f"line {looping_statement.source_line}."
+                    )
+                seen_instruction_pointers.add(instruction_pointer)
+                statement = statements[instruction_pointer]
+                if statement.kind == "label":
+                    instruction_pointer += 1
+                    continue
+                if statement.kind != "goto":
+                    raise RuntimeError(f"Unknown statement kind '{statement.kind}'.")
+                if not statement.should_jump:
+                    instruction_pointer += 1
+                    continue
+                target = statement.argument or ""
+                if Interpreter._parse_external_target(target) is not None:
+                    return
+                instruction_pointer = labels[target]
+            return
+
+        seen_states: set[tuple[int, tuple[str, ...]]] = set()
         instruction_pointer = 0
+        encountered_labels: tuple[str, ...] = ()
+
+        analysis_steps = 0
+        max_analysis_steps = max(1, len(statements) * 100)
 
         while instruction_pointer < len(statements):
-            if instruction_pointer in seen_instruction_pointers:
+            analysis_steps += 1
+            if analysis_steps > max_analysis_steps:
                 looping_statement = statements[instruction_pointer]
                 raise ParseError(
                     "Infinite loop detected at "
                     f"line {looping_statement.source_line}."
                 )
 
-            seen_instruction_pointers.add(instruction_pointer)
-            statement = statements[instruction_pointer]
+            state = (instruction_pointer, encountered_labels)
+            if state in seen_states:
+                looping_statement = statements[instruction_pointer]
+                raise ParseError(
+                    "Infinite loop detected at "
+                    f"line {looping_statement.source_line}."
+                )
+            seen_states.add(state)
 
+            statement = statements[instruction_pointer]
             if statement.kind == "label":
+                assert statement.argument is not None
+                encountered_labels = (*encountered_labels, statement.argument)
                 instruction_pointer += 1
                 continue
 
@@ -313,7 +371,20 @@ class Interpreter:
                 instruction_pointer += 1
                 continue
 
-            target = statement.argument or ""
+            target = statement.argument
+            if target is None:
+                if not encountered_labels:
+                    raise ParseError(
+                        f"Cannot execute targetless goto on line {statement.source_line} "
+                        "before any labels are encountered."
+                    )
+                encountered_labels = encountered_labels[:-1]
+                target = encountered_labels[-1] if encountered_labels else None
+                if target is None:
+                    instruction_pointer += 1
+                    continue
+
             if Interpreter._parse_external_target(target) is not None:
                 return
             instruction_pointer = labels[target]
+
