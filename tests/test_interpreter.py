@@ -141,3 +141,28 @@ def test_run_file_trace_captures_file_and_line_across_external_goto(tmp_path: Pa
         TraceEvent(file=str(entry.resolve()), line=2),
         TraceEvent(file=str(next_file.resolve()), line=1),
     ]
+
+
+def test_targetless_goto_pops_label_stack_and_jumps() -> None:
+    """A targetless goto pops the latest label and jumps to the new top label."""
+
+    source = "a:\nb:\ngoto\n"
+    with pytest.raises(ParseError, match="Infinite loop detected"):
+        Interpreter().compile(source)
+
+
+def test_targetless_goto_errors_without_encountered_labels() -> None:
+    """A targetless goto cannot run before any labels have been visited."""
+
+    with pytest.raises(ParseError, match="Cannot execute targetless goto"):
+        Interpreter().compile("goto\n")
+
+
+def test_targetless_goto_can_fall_through_after_popping_last_label() -> None:
+    """A targetless goto can terminate after removing the final stack entry."""
+
+    source = "a:\ngoto\n"
+    result = Interpreter().run(source)
+    assert result.terminated is True
+    assert result.reason == "completed"
+    assert result.steps == 2

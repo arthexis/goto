@@ -1,11 +1,10 @@
 # Goto Language
 
-`goto-language` is a deliberately tiny programming language where the **only**
-allowed constructs are:
+`goto-language` is a deliberately tiny programming language where the **only
+statement** is `goto`.
 
-- label definitions (`<expression>:`)
-- unconditional jumps (`goto <expression>` / `go to <expression>`)
-- cross-file jumps (`goto <file>.goto` or `goto <file>.goto:<label>`)
+Labels (`<expression>:`) are declarations, and `goto` can jump to local labels
+or cross-file targets (`goto <file>.goto` / `goto <file>.goto:<label>`).
 
 It includes a parser, compiler/runtime, and CLI.
 
@@ -34,8 +33,10 @@ Rules:
 8. Expression results are converted to strings for label lookup.
 9. Duplicate label definitions are not allowed after expression resolution.
 10. Local `goto` targets must refer to an existing resolved label.
-11. Programs whose local control flow is provably infinite are rejected at compile time.
-12. Blank lines and lines beginning with `#` are ignored.
+11. A targetless `goto` pops the most recently encountered label and jumps to the new stack top.
+12. Executing a targetless `goto` before any labels are encountered is a compile-time error.
+13. Programs whose local control flow is provably infinite are rejected at compile time.
+14. Blank lines and lines beginning with `#` are ignored.
 
 ## Running
 
