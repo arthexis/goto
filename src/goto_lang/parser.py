@@ -13,6 +13,7 @@ FILE_REFERENCE_PATTERN = re.compile(
 )
 GOTO_STATEMENT_PATTERN = re.compile(
     r"^(?P<prefix>(?:(?:do|please|not)\s+)*)"
+    r"(?:(?P<unless>unless)\s+(?P<unless_expression>.+?)\s+)?"
     r"(?P<goto>goto|go\s+to)(?:\s+(?P<expression>.+))?$",
     re.IGNORECASE,
 )
@@ -70,8 +71,8 @@ def _resolve_expression(
     return _safe_eval_expression(expression, line_no)
 
 
-def _safe_eval_expression(expression: str, line_no: int) -> str:
-    """Evaluate a constrained expression and return its string value.
+def _safe_eval_value(expression: str, line_no: int) -> object:
+    """Evaluate a constrained expression and return its resolved value.
 
     Supported syntax includes constants, string concatenation, numeric
     arithmetic, and unary +/- operators. Any unsupported syntax is rejected
@@ -82,7 +83,7 @@ def _safe_eval_expression(expression: str, line_no: int) -> str:
         line_no: Source line number used for parse error messaging.
 
     Returns:
-        Stringified expression result used as the normalized label.
+        Evaluated expression result.
 
     Raises:
         ParseError: If the expression uses unsupported syntax.
@@ -155,11 +156,25 @@ def _safe_eval_expression(expression: str, line_no: int) -> str:
 
     try:
         tree = ast.parse(expression, mode="eval")
-        return str(eval_node(tree))
+        return eval_node(tree)
     except ParseError:
         raise
     except Exception as exc:
         raise invalid_expression_error() from exc
+
+
+def _safe_eval_expression(expression: str, line_no: int) -> str:
+    """Evaluate a constrained expression and return its string value.
+
+    Args:
+        expression: Expression used in a label declaration or goto target.
+        line_no: Source line number used for parse error messaging.
+
+    Returns:
+        Stringified expression result used as the normalized label.
+    """
+
+    return str(_safe_eval_value(expression, line_no))
 
 
 def parse_program(source: str) -> list[ParsedLine]:
@@ -176,10 +191,12 @@ def parse_program(source: str) -> list[ParsedLine]:
     - ``do``
     - ``please``
     - ``not``
+    - ``unless <expression>``
 
-    The first two are accepted as no-ops. The number of ``not`` modifiers
-    controls whether a jump occurs: an odd count suppresses the jump, and an
-    even count executes it.
+    The first two are accepted as no-ops. ``unless`` suppresses a jump when
+    the expression evaluates to ``True``. The number of ``not`` modifiers then
+    toggles jump behavior: an odd count negates it, and an even count leaves
+    it unchanged.
 
     Args:
         source: Raw program source code.
@@ -207,12 +224,20 @@ def parse_program(source: str) -> list[ParsedLine]:
         if goto_match:
             prefix_words = goto_match.group("prefix").lower().split()
             expression = (goto_match.group("expression") or "").strip()
+            unless_expression = goto_match.group("unless_expression")
             target = (
                 _resolve_expression(expression, line_no, allow_file_reference=True)
                 if expression
                 else None
             )
-            should_jump = prefix_words.count("not") % 2 == 0
+            base_should_jump = True
+            if unless_expression is not None:
+                base_should_jump = _safe_eval_value(unless_expression, line_no) is not True
+
+            if prefix_words.count("not") % 2 == 1:
+                should_jump = not base_should_jump
+            else:
+                should_jump = base_should_jump
             parsed.append(
                 ParsedLine(
                     index=line_no,

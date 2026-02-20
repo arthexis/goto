@@ -48,6 +48,34 @@ def test_compile_rejects_expression_based_infinite_loop() -> None:
         Interpreter().compile(source)
 
 
+
+
+def test_unless_true_suppresses_jump_and_program_terminates() -> None:
+    """A goto guarded by unless True does not jump."""
+
+    source = "start:\nunless True goto start\n"
+    result = Interpreter().run(source)
+    assert result.terminated is True
+    assert result.reason == "completed"
+    assert result.steps == 2
+
+
+def test_unless_false_allows_jump_and_is_validated_as_infinite() -> None:
+    """A goto guarded by unless False still jumps and is compile-time invalid."""
+
+    source = "start:\nunless False goto start\n"
+    with pytest.raises(ParseError, match="Infinite loop detected"):
+        Interpreter().compile(source)
+
+
+def test_not_with_unless_true_restores_jump_and_is_validated_as_infinite() -> None:
+    """Combining not with unless True restores jump behavior."""
+
+    source = "start:\nnot unless True goto start\n"
+    with pytest.raises(ParseError, match="Infinite loop detected"):
+        Interpreter().compile(source)
+
+
 def test_not_modifier_suppresses_goto_jump() -> None:
     """A goto with odd number of `not` modifiers does not jump."""
 

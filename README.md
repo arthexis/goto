@@ -29,14 +29,15 @@ Rules:
 4. Names, function calls, attribute access, comprehensions, imports, and other Python syntax are rejected.
 5. `goto` may be written as `goto` or `go to` in any case.
 6. Optional words `do`, `please`, and `not` may appear before goto in any order.
-7. The number of `not` modifiers changes behavior: odd means no jump, even means jump.
-8. Expression results are converted to strings for label lookup.
-9. Duplicate label definitions are not allowed after expression resolution.
-10. Local `goto` targets must refer to an existing resolved label.
-11. A targetless `goto` pops the most recently encountered label and jumps to the new stack top.
-12. Executing a targetless `goto` before any labels are encountered is a compile-time error.
-13. Programs whose local control flow is provably infinite are rejected at compile time.
-14. Blank lines and lines beginning with `#` are ignored.
+7. `unless <expression>` may appear before goto and suppresses the jump when the expression evaluates to `True`.
+8. The number of `not` modifiers changes behavior by toggling the jump decision: odd inverts it, even keeps it.
+9. Expression results are converted to strings for label lookup.
+10. Duplicate label definitions are not allowed after expression resolution.
+11. Local `goto` targets must refer to an existing resolved label.
+12. A targetless `goto` pops the most recently encountered label and jumps to the new stack top.
+13. Executing a targetless `goto` before any labels are encountered is a compile-time error.
+14. Programs whose local control flow is provably infinite are rejected at compile time.
+15. Blank lines and lines beginning with `#` are ignored.
 
 ## Running
 
