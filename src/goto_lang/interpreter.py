@@ -190,6 +190,7 @@ class Interpreter:
                     else:
                         ip = program.labels[target]
                 else:
+                    self._discard_label_from_stack(label_stack, statement.argument)
                     ip += 1
             else:
                 raise RuntimeError(f"Unknown statement kind '{statement.kind}'.")
@@ -201,6 +202,51 @@ class Interpreter:
             reason="completed",
             trace=trace,
         )
+
+    @staticmethod
+    def _discard_label_from_stack(label_stack: list[str], target: str | None) -> None:
+        """Remove a pending local goto target from the runtime label stack.
+
+        When a goto is disabled via ``not`` and the target label is already on the
+        stack, the latest matching stack entry is removed without performing a jump.
+
+        Args:
+            label_stack: Runtime stack of encountered labels.
+            target: Raw goto target argument from the source line.
+        """
+
+        if target is None:
+            return
+
+        for idx in range(len(label_stack) - 1, -1, -1):
+            if label_stack[idx] == target:
+                del label_stack[idx]
+                return
+
+    @staticmethod
+    def _discard_label_from_history(
+        encountered_labels: tuple[str, ...],
+        target: str | None,
+    ) -> tuple[str, ...]:
+        """Return label history with the newest matching label removed.
+
+        Args:
+            encountered_labels: Immutable history of visited labels.
+            target: Local goto target that should be discarded.
+
+        Returns:
+            Updated tuple with the most recent target removed, or the original
+            tuple when no matching label exists.
+        """
+
+        if target is None:
+            return encountered_labels
+
+        for idx in range(len(encountered_labels) - 1, -1, -1):
+            if encountered_labels[idx] == target:
+                return encountered_labels[:idx] + encountered_labels[idx + 1 :]
+
+        return encountered_labels
 
     @staticmethod
     def _parse_external_target(target: str) -> tuple[str, str | None] | None:
@@ -368,6 +414,10 @@ class Interpreter:
                 raise RuntimeError(f"Unknown statement kind '{statement.kind}'.")
 
             if not statement.should_jump:
+                encountered_labels = Interpreter._discard_label_from_history(
+                    encountered_labels,
+                    statement.argument,
+                )
                 instruction_pointer += 1
                 continue
 
@@ -387,4 +437,3 @@ class Interpreter:
             if Interpreter._parse_external_target(target) is not None:
                 return
             instruction_pointer = labels[target]
-

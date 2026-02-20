@@ -86,6 +86,16 @@ def test_not_modifier_suppresses_goto_jump() -> None:
     assert result.steps == 2
 
 
+def test_not_goto_discards_matching_label_from_stack() -> None:
+    """A disabled goto removes its target label from the runtime stack."""
+
+    source = "a:\nb:\nnot goto a\ngoto\n"
+    result = Interpreter().run(source)
+    assert result.terminated is True
+    assert result.reason == "completed"
+    assert result.steps == 4
+
+
 def test_even_not_modifiers_preserve_goto_jump() -> None:
     """A goto with even number of `not` modifiers is validated as looping."""
 
