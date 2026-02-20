@@ -51,6 +51,24 @@ def test_parse_prefix_modifiers_update_jump_behavior() -> None:
     assert parsed[2].should_jump is True
 
 
+
+
+def test_parse_unless_prefix_controls_jump_behavior() -> None:
+    """Unless suppresses jump only when its expression evaluates to True."""
+
+    parsed = parse_program("start:\nunless True goto start\nunless False goto start\n")
+    assert parsed[1].should_jump is False
+    assert parsed[2].should_jump is True
+
+
+def test_parse_not_with_unless_toggles_jump_behavior() -> None:
+    """Not still toggles jump behavior when combined with unless."""
+
+    parsed = parse_program("start:\nnot unless True goto start\nnot unless False goto start\n")
+    assert parsed[1].should_jump is True
+    assert parsed[2].should_jump is False
+
+
 def test_parse_file_targets_with_or_without_label() -> None:
     """Parser accepts `goto file.goto` and `goto file.goto:label` targets."""
 
