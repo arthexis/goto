@@ -204,3 +204,22 @@ def test_targetless_goto_can_fall_through_after_popping_last_label() -> None:
     assert result.terminated is True
     assert result.reason == "completed"
     assert result.steps == 2
+
+
+def test_compile_supports_user_function_in_label_and_unless_expression() -> None:
+    """Compiler accepts user() inside label and unless expressions when provided."""
+
+    prompts: list[str] = []
+
+    def fake_user(prompt: str) -> object:
+        prompts.append(prompt)
+        return "loop" if len(prompts) == 1 else True
+
+    program = Interpreter().compile(
+        'user("label> "):\nunless user("jump? ") goto loop\n',
+        user_function=fake_user,
+    )
+
+    assert program.labels == {"loop": 0}
+    assert program.statements[1].should_jump is False
+    assert prompts == ["label> ", "jump? "]

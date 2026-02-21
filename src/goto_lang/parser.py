@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 import re
+from typing import Callable
 
 
 BARE_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -36,7 +37,10 @@ class ParsedLine:
 
 
 def _resolve_expression(
-    expression: str, line_no: int, allow_file_reference: bool = False
+    expression: str,
+    line_no: int,
+    allow_file_reference: bool = False,
+    user_function: Callable[[str], object] | None = None,
 ) -> str:
     """Evaluate an expression and convert the result into a label string.
 
@@ -68,10 +72,14 @@ def _resolve_expression(
         ):
             return f"{parts[0]}:{parts[1]}"
 
-    return _safe_eval_expression(expression, line_no)
+    return _safe_eval_expression(expression, line_no, user_function=user_function)
 
 
-def _safe_eval_value(expression: str, line_no: int) -> object:
+def _safe_eval_value(
+    expression: str,
+    line_no: int,
+    user_function: Callable[[str], object] | None = None,
+) -> object:
     """Evaluate a constrained expression and return its resolved value.
 
     Supported syntax includes constants, string concatenation, numeric
@@ -152,6 +160,22 @@ def _safe_eval_value(expression: str, line_no: int) -> object:
                 raise invalid_expression_error()
             raise invalid_expression_error()
 
+        if isinstance(node, ast.Call):
+            if not isinstance(node.func, ast.Name) or node.func.id != "user":
+                raise invalid_expression_error()
+            if node.keywords:
+                raise invalid_expression_error()
+            if len(node.args) > 1:
+                raise ParseError(
+                    f"Invalid expression on line {line_no}: 'user' accepts at most one argument."
+                )
+            if user_function is None:
+                raise ParseError(
+                    f"Invalid expression on line {line_no}: 'user' is unavailable in this context."
+                )
+            prompt = "" if not node.args else str(eval_node(node.args[0]))
+            return user_function(prompt)
+
         raise invalid_expression_error()
 
     try:
@@ -163,7 +187,11 @@ def _safe_eval_value(expression: str, line_no: int) -> object:
         raise invalid_expression_error() from exc
 
 
-def _safe_eval_expression(expression: str, line_no: int) -> str:
+def _safe_eval_expression(
+    expression: str,
+    line_no: int,
+    user_function: Callable[[str], object] | None = None,
+) -> str:
     """Evaluate a constrained expression and return its string value.
 
     Args:
@@ -174,10 +202,13 @@ def _safe_eval_expression(expression: str, line_no: int) -> str:
         Stringified expression result used as the normalized label.
     """
 
-    return str(_safe_eval_value(expression, line_no))
+    return str(_safe_eval_value(expression, line_no, user_function=user_function))
 
 
-def parse_program(source: str) -> list[ParsedLine]:
+def parse_program(
+    source: str,
+    user_function: Callable[[str], object] | None = None,
+) -> list[ParsedLine]:
     """Parse source code into normalized program lines.
 
     Blank lines and comments beginning with ``#`` are ignored.
@@ -216,7 +247,11 @@ def parse_program(source: str) -> list[ParsedLine]:
 
         if line.endswith(":"):
             expression = line[:-1].strip()
-            label = _resolve_expression(expression, line_no)
+            label = _resolve_expression(
+                expression,
+                line_no,
+                user_function=user_function,
+            )
             parsed.append(ParsedLine(index=line_no, raw=raw_line, label=label))
             continue
 
@@ -226,13 +261,25 @@ def parse_program(source: str) -> list[ParsedLine]:
             expression = (goto_match.group("expression") or "").strip()
             unless_expression = goto_match.group("unless_expression")
             target = (
-                _resolve_expression(expression, line_no, allow_file_reference=True)
+                _resolve_expression(
+                    expression,
+                    line_no,
+                    allow_file_reference=True,
+                    user_function=user_function,
+                )
                 if expression
                 else None
             )
             base_should_jump = True
             if unless_expression is not None:
-                base_should_jump = _safe_eval_value(unless_expression, line_no) is not True
+                base_should_jump = (
+                    _safe_eval_value(
+                        unless_expression,
+                        line_no,
+                        user_function=user_function,
+                    )
+                    is not True
+                )
 
             if prefix_words.count("not") % 2 == 1:
                 should_jump = not base_should_jump

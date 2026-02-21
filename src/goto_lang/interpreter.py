@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .parser import FILE_REFERENCE_PATTERN, ParseError, ParsedLine, parse_program
 
@@ -49,7 +50,11 @@ class TraceEvent:
 class Interpreter:
     """Compiler and runtime for the goto-only language."""
 
-    def compile(self, source: str) -> Program:
+    def compile(
+        self,
+        source: str,
+        user_function: Callable[[str], object] | None = None,
+    ) -> Program:
         """Compile source code into a :class:`Program`.
 
         Args:
@@ -62,7 +67,7 @@ class Interpreter:
             ParseError: If syntax or label references are invalid.
         """
 
-        parsed = parse_program(source)
+        parsed = parse_program(source, user_function=user_function)
         statements: list[Statement] = []
         labels: dict[str, int] = {}
 
@@ -72,6 +77,14 @@ class Interpreter:
         self._validate_goto_targets(statements, labels)
         self._validate_not_guaranteed_infinite(statements, labels, ())
         return Program(statements=statements, labels=labels, label_stack=())
+
+
+    @staticmethod
+    def _default_user(prompt: str) -> str:
+        """Write a prompt and return one line of user input."""
+
+        print(prompt, end="", flush=True)
+        return input()
 
     def run(self, source: str, max_steps: int = 10_000) -> ExecutionResult:
         """Execute source code with a step limit.
@@ -87,7 +100,7 @@ class Interpreter:
             ParseError: If compilation fails.
         """
 
-        program = self.compile(source)
+        program = self.compile(source, user_function=self._default_user)
         return self.run_program(program, max_steps=max_steps)
 
     def run_file(self, source_path: Path | str, max_steps: int = 10_000) -> ExecutionResult:
@@ -103,7 +116,7 @@ class Interpreter:
 
         path = Path(source_path).resolve()
         source = path.read_text(encoding="utf-8")
-        program = self.compile(source)
+        program = self.compile(source, user_function=self._default_user)
         return self._run_with_context(program, max_steps=max_steps, current_path=path)
 
     def compile_file(self, source_path: Path | str) -> Program:
