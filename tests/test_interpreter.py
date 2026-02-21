@@ -225,6 +225,25 @@ def test_compile_supports_user_function_in_label_and_unless_expression() -> None
     assert prompts == ["label> ", "jump? "]
 
 
+
+
+def test_compile_accepts_more_or_less_program_with_semicolons() -> None:
+    """Compiler accepts the user-provided program with custom operators."""
+
+    source = """Start:
+   UNLESS user(\"Loop forever?\") ~= Negative
+   GOTO Start;
+"""
+
+    program = Interpreter().compile(
+        source,
+        user_function=lambda _prompt: "negative",
+    )
+
+    assert program.labels == {"start": 0}
+    assert program.statements[1].should_jump is False
+    assert program.statements[1].argument == "start"
+
 def test_run_user_function_without_args_prompts_and_jumps_case_insensitively() -> None:
     """Runtime default user() prompt supports case-insensitive, trimmed label choices."""
 
