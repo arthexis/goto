@@ -121,3 +121,29 @@ def test_parse_user_function_rejects_keyword_arguments() -> None:
 
     with pytest.raises(ParseError, match="Invalid expression"):
         parse_program('goto user(prompt="x")', user_function=lambda prompt: prompt)
+
+
+def test_parse_user_function_without_args_uses_default_prompt() -> None:
+    """Parser provides a friendly default prompt for bare user() calls."""
+
+    prompts: list[str] = []
+
+    def fake_user(prompt: str) -> str:
+        prompts.append(prompt)
+        return "destination"
+
+    parsed = parse_program("entry:\ngoto user()\n", user_function=fake_user)
+
+    assert prompts == ["Which label would you like to go to? "]
+    assert parsed[1].goto_target == "destination"
+
+
+def test_parse_user_function_normalizes_whitespace_and_case() -> None:
+    """Parser allows generous user input by normalizing case and whitespace."""
+
+    parsed = parse_program(
+        "entry:\nTARGET:\ngoto user()\n",
+        user_function=lambda _prompt: "  tArGeT\n",
+    )
+
+    assert parsed[2].goto_target == "target"
