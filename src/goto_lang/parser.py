@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import math
 import re
 from typing import Callable
 
@@ -106,6 +107,14 @@ def _safe_eval_value(
         ParseError: If the expression uses unsupported syntax.
     """
 
+    custom_operator_value = _evaluate_custom_comparison(
+        expression,
+        line_no,
+        user_function=user_function,
+    )
+    if custom_operator_value is not None:
+        return custom_operator_value
+
     def invalid_expression_error() -> ParseError:
         return ParseError(f"Invalid expression on line {line_no}: '{expression}'.")
 
@@ -200,6 +209,91 @@ def _safe_eval_value(
         raise invalid_expression_error() from exc
 
 
+def _evaluate_custom_comparison(
+    expression: str,
+    line_no: int,
+    user_function: Callable[[str], object] | None = None,
+) -> bool | None:
+    """Evaluate custom comparison operators when present in an expression."""
+
+    operator_parts = _split_custom_operator(expression)
+    if operator_parts is None:
+        return None
+
+    left_expression, operator, right_expression = operator_parts
+    left_value = _evaluate_custom_operand(left_expression, line_no, user_function=user_function)
+    right_value = _evaluate_custom_operand(right_expression, line_no, user_function=user_function)
+    more_or_less = _more_or_less_same(left_value, right_value)
+    if operator == "~=":
+        return more_or_less
+    return not more_or_less
+
+
+def _evaluate_custom_operand(
+    expression: str,
+    line_no: int,
+    user_function: Callable[[str], object] | None = None,
+) -> object:
+    """Resolve one operand of a custom comparison expression."""
+
+    if BARE_LABEL_PATTERN.match(expression):
+        return expression
+    return _safe_eval_value(expression, line_no, user_function=user_function)
+
+
+def _split_custom_operator(expression: str) -> tuple[str, str, str] | None:
+    """Split an expression by the first top-level custom operator."""
+
+    depth = 0
+    in_single_quote = False
+    in_double_quote = False
+
+    for index, char in enumerate(expression):
+        previous_char = expression[index - 1] if index > 0 else ""
+        if char == "'" and not in_double_quote and previous_char != "\\":
+            in_single_quote = not in_single_quote
+            continue
+        if char == '"' and not in_single_quote and previous_char != "\\":
+            in_double_quote = not in_double_quote
+            continue
+        if in_single_quote or in_double_quote:
+            continue
+
+        if char == "(":
+            depth += 1
+            continue
+        if char == ")":
+            depth -= 1
+            continue
+        if depth != 0:
+            continue
+
+        candidate = expression[index : index + 2]
+        if candidate in {"~=", "=~"}:
+            left = expression[:index].strip()
+            right = expression[index + 2 :].strip()
+            if not left or not right:
+                return None
+            return left, candidate, right
+
+    return None
+
+
+def _more_or_less_same(left: object, right: object) -> bool:
+    """Return whether two values are considered approximately equivalent."""
+
+    if isinstance(left, str) and isinstance(right, str):
+        normalized_left = " ".join(left.split()).casefold()
+        normalized_right = " ".join(right.split()).casefold()
+        return normalized_left == normalized_right
+
+    if isinstance(left, (int, float)) and not isinstance(left, bool):
+        if isinstance(right, (int, float)) and not isinstance(right, bool):
+            return math.isclose(float(left), float(right), rel_tol=1e-09, abs_tol=1e-09)
+
+    return left == right
+
+
 def _safe_eval_expression(
     expression: str,
     line_no: int,
@@ -253,10 +347,16 @@ def parse_program(
     """
 
     parsed: list[ParsedLine] = []
+    pending_unless_expression: tuple[int, str] | None = None
     for line_no, raw_line in enumerate(source.splitlines(), start=1):
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
+
+        if line.endswith(";"):
+            line = line[:-1].rstrip()
+            if not line:
+                continue
 
         if line.endswith(":"):
             expression = line[:-1].strip()
@@ -273,6 +373,9 @@ def parse_program(
             prefix_words = goto_match.group("prefix").lower().split()
             expression = (goto_match.group("expression") or "").strip()
             unless_expression = goto_match.group("unless_expression")
+            if unless_expression is None and pending_unless_expression is not None:
+                unless_expression = pending_unless_expression[1]
+            pending_unless_expression = None
             target = (
                 _resolve_expression(
                     expression,
@@ -309,9 +412,20 @@ def parse_program(
             )
             continue
 
+        unless_only_match = re.match(r"^unless\s+(.+)$", line, re.IGNORECASE)
+        if unless_only_match:
+            pending_unless_expression = (line_no, unless_only_match.group(1).strip())
+            continue
+
         raise ParseError(
             f"Unexpected statement on line {line_no}: '{raw_line}'. "
             "Only labels and goto statements are allowed."
+        )
+
+
+    if pending_unless_expression is not None:
+        raise ParseError(
+            f"Unexpected statement on line {pending_unless_expression[0]}: 'unless' must be followed by a goto statement."
         )
 
     return parsed

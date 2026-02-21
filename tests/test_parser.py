@@ -61,6 +61,23 @@ def test_parse_unless_prefix_controls_jump_behavior() -> None:
     assert parsed[2].should_jump is True
 
 
+def test_parse_unless_with_more_or_less_operator() -> None:
+    """Unless can use `~=` for approximate equality checks."""
+
+    parsed = parse_program(
+        'start:\nunless user("Loop forever?") ~= Negative goto start\n',
+        user_function=lambda _prompt: "negative",
+    )
+    assert parsed[1].should_jump is False
+
+
+def test_parse_unless_with_less_is_more_operator() -> None:
+    """Unless can use `=~` for the inverse approximate comparison."""
+
+    parsed = parse_program("start:\nunless 1 =~ 1 goto start\n")
+    assert parsed[1].should_jump is True
+
+
 def test_parse_not_with_unless_toggles_jump_behavior() -> None:
     """Not still toggles jump behavior when combined with unless."""
 

@@ -30,14 +30,16 @@ Rules:
 5. `goto` may be written as `goto` or `go to` in any case.
 6. Optional words `do`, `please`, and `not` may appear before goto in any order.
 7. `unless <expression>` may appear before goto and suppresses the jump when the expression evaluates to `True`.
-8. The number of `not` modifiers changes behavior by toggling the jump decision: odd inverts it, even keeps it.
-9. Expression results are converted to strings for label lookup.
-10. Duplicate label definitions are not allowed after expression resolution.
-11. Local `goto` targets must refer to an existing resolved label.
-12. A targetless `goto` pops the most recently encountered label and jumps to the new stack top.
-13. Executing a targetless `goto` before any labels are encountered is a compile-time error.
-14. Programs whose local control flow is provably infinite are rejected at compile time.
-15. Blank lines and lines beginning with `#` are ignored.
+8. Custom operators are supported in expressions: `~=` ("more or less") checks approximate equality and `=~` ("less is more") is the inverse.
+9. The number of `not` modifiers changes behavior by toggling the jump decision: odd inverts it, even keeps it.
+10. Expression results are converted to strings for label lookup.
+11. Duplicate label definitions are not allowed after expression resolution.
+12. Local `goto` targets must refer to an existing resolved label.
+13. A targetless `goto` pops the most recently encountered label and jumps to the new stack top.
+14. Executing a targetless `goto` before any labels are encountered is a compile-time error.
+15. Programs whose local control flow is provably infinite are rejected at compile time.
+16. A trailing `;` is accepted at the end of non-empty statements.
+17. Blank lines and lines beginning with `#` are ignored.
 
 ## Running
 
