@@ -104,3 +104,20 @@ def test_parse_targetless_goto() -> None:
     parsed = parse_program("entry:\ngoto\n")
     assert parsed[1].is_goto is True
     assert parsed[1].goto_target is None
+
+
+def test_parse_user_function_is_supported_in_goto_expression() -> None:
+    """Parser can resolve goto expressions that call the built-in user function."""
+
+    parsed = parse_program(
+        'entry:\ngoto user("name? ")\n',
+        user_function=lambda prompt: "done" if prompt == "name? " else "",
+    )
+    assert parsed[1].goto_target == "done"
+
+
+def test_parse_user_function_rejects_keyword_arguments() -> None:
+    """Parser rejects user() calls that use keyword arguments."""
+
+    with pytest.raises(ParseError, match="Invalid expression"):
+        parse_program('goto user(prompt="x")', user_function=lambda prompt: prompt)
