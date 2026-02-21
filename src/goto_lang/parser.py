@@ -8,6 +8,12 @@ import re
 from typing import Callable
 
 
+def _normalize_label_identifier(value: str) -> str:
+    """Normalize user-provided label text for case-insensitive matching."""
+
+    return " ".join(value.split()).lower()
+
+
 BARE_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 FILE_REFERENCE_PATTERN = re.compile(
     r"^(?P<file>[A-Za-z0-9_./-]+\.goto)(?::(?P<label>[A-Za-z_][A-Za-z0-9_]*))?$"
@@ -57,7 +63,7 @@ def _resolve_expression(
     """
 
     if BARE_LABEL_PATTERN.match(expression):
-        return expression
+        return _normalize_label_identifier(expression)
 
     if allow_file_reference:
         match = FILE_REFERENCE_PATTERN.match(expression)
@@ -72,7 +78,10 @@ def _resolve_expression(
         ):
             return f"{parts[0]}:{parts[1]}"
 
-    return _safe_eval_expression(expression, line_no, user_function=user_function)
+    resolved = _safe_eval_expression(expression, line_no, user_function=user_function)
+    if allow_file_reference and FILE_REFERENCE_PATTERN.match(resolved):
+        return resolved
+    return _normalize_label_identifier(resolved)
 
 
 def _safe_eval_value(
@@ -173,7 +182,11 @@ def _safe_eval_value(
                 raise ParseError(
                     f"Invalid expression on line {line_no}: 'user' is unavailable in this context."
                 )
-            prompt = "" if not node.args else str(eval_node(node.args[0]))
+            prompt = (
+                "Which label would you like to go to? "
+                if not node.args
+                else str(eval_node(node.args[0]))
+            )
             return user_function(prompt)
 
         raise invalid_expression_error()

@@ -223,3 +223,21 @@ def test_compile_supports_user_function_in_label_and_unless_expression() -> None
     assert program.labels == {"loop": 0}
     assert program.statements[1].should_jump is False
     assert prompts == ["label> ", "jump? "]
+
+
+def test_run_user_function_without_args_prompts_and_jumps_case_insensitively() -> None:
+    """Runtime default user() prompt supports case-insensitive, trimmed label choices."""
+
+    prompts: list[str] = []
+
+    def fake_user(prompt: str) -> str:
+        prompts.append(prompt)
+        return "  dOnE  "
+
+    program = Interpreter().compile("entry:\ngoto user()\nDONE:\n", user_function=fake_user)
+    result = Interpreter().run_program(program, max_steps=10)
+
+    assert prompts == ["Which label would you like to go to? "]
+    assert result.terminated is True
+    assert result.reason == "completed"
+    assert result.steps == 3
