@@ -19,12 +19,66 @@ BARE_LABEL_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 FILE_REFERENCE_PATTERN = re.compile(
     r"^(?P<file>[A-Za-z0-9_./-]+\.goto)(?::(?P<label>[A-Za-z_][A-Za-z0-9_]*))?$"
 )
-GOTO_STATEMENT_PATTERN = re.compile(
-    r"^(?P<prefix>(?:(?:do|please|not)\s+)*)"
-    r"(?:(?P<unless>unless)\s+(?P<unless_expression>.+?)\s+)?"
-    r"(?P<goto>goto|go\s+to)(?:\s+(?P<expression>.+))?$",
-    re.IGNORECASE,
-)
+
+
+def _is_word_char(character: str) -> bool:
+    """Return whether a character should count as part of an identifier word."""
+
+    return character.isalnum() or character == "_"
+
+
+def _match_goto_statement(line: str) -> tuple[str, str | None] | None:
+    """Find a goto/go to keyword outside of quoted strings."""
+
+    in_single = False
+    in_double = False
+    escaped = False
+    lowered = line.lower()
+
+    for index, character in enumerate(line):
+        if escaped:
+            escaped = False
+            continue
+
+        if character == "\\":
+            escaped = True
+            continue
+
+        if character == "'" and not in_double:
+            in_single = not in_single
+            continue
+
+        if character == '"' and not in_single:
+            in_double = not in_double
+            continue
+
+        if in_single or in_double:
+            continue
+
+        if lowered.startswith("goto", index):
+            start = index
+            end = index + 4
+        elif lowered.startswith("go", index):
+            whitespace_end = index + 2
+            while whitespace_end < len(line) and line[whitespace_end].isspace():
+                whitespace_end += 1
+            if whitespace_end == index + 2 or not lowered.startswith("to", whitespace_end):
+                continue
+            start = index
+            end = whitespace_end + 2
+        else:
+            continue
+
+        if start > 0 and _is_word_char(line[start - 1]):
+            continue
+        if end < len(line) and _is_word_char(line[end]):
+            continue
+
+        prefix = line[:start].strip()
+        expression = line[end:].strip() or None
+        return prefix, expression
+
+    return None
 
 
 class ParseError(ValueError):
@@ -368,11 +422,15 @@ def parse_program(
             parsed.append(ParsedLine(index=line_no, raw=raw_line, label=label))
             continue
 
-        goto_match = GOTO_STATEMENT_PATTERN.match(line)
-        if goto_match:
-            prefix_words = goto_match.group("prefix").lower().split()
-            expression = (goto_match.group("expression") or "").strip()
-            unless_expression = goto_match.group("unless_expression")
+        goto_statement = _match_goto_statement(line)
+        unless_only_match = re.match(r"^unless\s+(.+)$", line, re.IGNORECASE)
+        if unless_only_match and goto_statement is None:
+            pending_unless_expression = (line_no, unless_only_match.group(1).strip())
+            continue
+
+        if goto_statement is not None:
+            prefix_text, expression = goto_statement
+            unless_expression = _extract_unless_expression(prefix_text)
             if unless_expression is None and pending_unless_expression is not None:
                 unless_expression = pending_unless_expression[1]
             pending_unless_expression = None
@@ -383,9 +441,10 @@ def parse_program(
                     allow_file_reference=True,
                     user_function=user_function,
                 )
-                if expression
+                if expression is not None
                 else None
             )
+            prefix_words = _prefix_words_without_unless(prefix_text)
             base_should_jump = True
             if unless_expression is not None:
                 base_should_jump = (
@@ -412,15 +471,7 @@ def parse_program(
             )
             continue
 
-        unless_only_match = re.match(r"^unless\s+(.+)$", line, re.IGNORECASE)
-        if unless_only_match:
-            pending_unless_expression = (line_no, unless_only_match.group(1).strip())
-            continue
-
-        raise ParseError(
-            f"Unexpected statement on line {line_no}: '{raw_line}'. "
-            "Only labels and goto statements are allowed."
-        )
+        parsed.append(ParsedLine(index=line_no, raw=raw_line))
 
 
     if pending_unless_expression is not None:
@@ -429,3 +480,26 @@ def parse_program(
         )
 
     return parsed
+
+
+def _extract_unless_expression(prefix_text: str) -> str | None:
+    """Extract an `unless <expression>` segment from goto prefix text.
+
+    Only an `unless` clause that appears at the end of prefix text is treated
+    as a modifier; other words are ignored as no-op prefixes.
+    """
+
+    unless_match = re.search(r"\bunless\b\s+(.+)$", prefix_text, re.IGNORECASE)
+    if unless_match is None:
+        return None
+    return unless_match.group(1).strip() or None
+
+
+def _prefix_words_without_unless(prefix_text: str) -> list[str]:
+    """Return prefix words with a trailing `unless` clause removed."""
+
+    unless_match = re.search(r"\bunless\b\s+.+$", prefix_text, re.IGNORECASE)
+    prefix_without_unless = (
+        prefix_text[: unless_match.start()].strip() if unless_match else prefix_text
+    )
+    return prefix_without_unless.lower().split()

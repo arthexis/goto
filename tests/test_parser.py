@@ -14,11 +14,13 @@ def test_parse_valid_program() -> None:
     assert parsed[1].goto_target == "start"
 
 
-def test_reject_unknown_statement() -> None:
-    """Parser rejects statements other than labels and goto."""
+def test_parse_unknown_statement_as_noop() -> None:
+    """Parser accepts unknown statements as inert no-op lines."""
 
-    with pytest.raises(ParseError, match="Only labels and goto"):
-        parse_program("print hello")
+    parsed = parse_program("print hello")
+    assert len(parsed) == 1
+    assert parsed[0].is_goto is False
+    assert parsed[0].label is None
 
 
 def test_parse_label_expressions() -> None:
@@ -53,6 +55,16 @@ def test_parse_prefix_modifiers_update_jump_behavior() -> None:
 
 
 
+
+
+def test_parse_allows_arbitrary_prefix_keywords_before_goto() -> None:
+    """Parser ignores unrecognized prefix words before goto."""
+
+    parsed = parse_program("start:\nquantum frobnicate not goto start\n")
+    assert parsed[1].goto_target == "start"
+    assert parsed[1].should_jump is False
+
+
 def test_parse_unless_prefix_controls_jump_behavior() -> None:
     """Unless suppresses jump only when its expression evaluates to True."""
 
@@ -60,6 +72,19 @@ def test_parse_unless_prefix_controls_jump_behavior() -> None:
     assert parsed[1].should_jump is False
     assert parsed[2].should_jump is True
 
+
+
+
+def test_unless_expression_with_goto_text_is_not_misparsed_as_goto() -> None:
+    """Standalone unless expressions may contain the word `goto` in strings."""
+
+    parsed = parse_program(
+        'start:\nunless "goto x" ~= "y"\ngoto start\n'
+    )
+
+    assert parsed[1].is_goto is True
+    assert parsed[1].goto_target == "start"
+    assert parsed[1].should_jump is True
 
 def test_parse_unless_with_more_or_less_operator() -> None:
     """Unless can use `~=` for approximate equality checks."""

@@ -205,6 +205,8 @@ class Interpreter:
                 else:
                     self._discard_label_from_stack(label_stack, statement.argument)
                     ip += 1
+            elif statement.kind == "noop":
+                ip += 1
             else:
                 raise RuntimeError(f"Unknown statement kind '{statement.kind}'.")
 
@@ -325,7 +327,13 @@ class Interpreter:
             )
             return
 
-        raise ParseError(f"Line {line.index} is neither label nor goto.")
+        statements.append(
+            Statement(
+                kind="noop",
+                argument=None,
+                source_line=line.index,
+            )
+        )
 
 
     @staticmethod
@@ -377,7 +385,7 @@ class Interpreter:
                     )
                 seen_instruction_pointers.add(instruction_pointer)
                 statement = statements[instruction_pointer]
-                if statement.kind == "label":
+                if statement.kind in {"label", "noop"}:
                     instruction_pointer += 1
                     continue
                 if statement.kind != "goto":
@@ -420,6 +428,10 @@ class Interpreter:
             if statement.kind == "label":
                 assert statement.argument is not None
                 encountered_labels = (*encountered_labels, statement.argument)
+                instruction_pointer += 1
+                continue
+
+            if statement.kind == "noop":
                 instruction_pointer += 1
                 continue
 

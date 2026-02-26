@@ -18,6 +18,28 @@ def test_program_terminates_when_falling_off_end() -> None:
     assert result.steps == 1
 
 
+
+
+def test_compile_accepts_unknown_statements_as_noops() -> None:
+    """Compiler treats unknown non-goto lines as no-op statements."""
+
+    program = Interpreter().compile("entry:\nprint hello\n")
+    assert [statement.kind for statement in program.statements] == ["label", "noop"]
+
+
+def test_run_ignores_unknown_statements_and_executes_goto_only() -> None:
+    """Runtime ignores non-goto lines while preserving goto behavior."""
+
+    source = """entry:
+this language does not exist
+please teleport not really goto done
+done:
+"""
+    result = Interpreter().run(source)
+    assert result.terminated is True
+    assert result.reason == "completed"
+
+
 def test_compile_rejects_guaranteed_infinite_loop() -> None:
     """Compilation rejects loops that are guaranteed to be infinite."""
 
