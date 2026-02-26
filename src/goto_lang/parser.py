@@ -20,8 +20,7 @@ FILE_REFERENCE_PATTERN = re.compile(
     r"^(?P<file>[A-Za-z0-9_./-]+\.goto)(?::(?P<label>[A-Za-z_][A-Za-z0-9_]*))?$"
 )
 GOTO_STATEMENT_PATTERN = re.compile(
-    r"^(?P<prefix>(?:(?:do|please|not)\s+)*)"
-    r"(?:(?P<unless>unless)\s+(?P<unless_expression>.+?)\s+)?"
+    r"^(?P<prefix>.*?)"
     r"(?P<goto>goto|go\s+to)(?:\s+(?P<expression>.+))?$",
     re.IGNORECASE,
 )
@@ -370,9 +369,9 @@ def parse_program(
 
         goto_match = GOTO_STATEMENT_PATTERN.match(line)
         if goto_match:
-            prefix_words = goto_match.group("prefix").lower().split()
+            prefix_text = goto_match.group("prefix").strip()
             expression = (goto_match.group("expression") or "").strip()
-            unless_expression = goto_match.group("unless_expression")
+            unless_expression = _extract_unless_expression(prefix_text)
             if unless_expression is None and pending_unless_expression is not None:
                 unless_expression = pending_unless_expression[1]
             pending_unless_expression = None
@@ -386,6 +385,7 @@ def parse_program(
                 if expression
                 else None
             )
+            prefix_words = _prefix_words_without_unless(prefix_text)
             base_should_jump = True
             if unless_expression is not None:
                 base_should_jump = (
@@ -417,10 +417,7 @@ def parse_program(
             pending_unless_expression = (line_no, unless_only_match.group(1).strip())
             continue
 
-        raise ParseError(
-            f"Unexpected statement on line {line_no}: '{raw_line}'. "
-            "Only labels and goto statements are allowed."
-        )
+        parsed.append(ParsedLine(index=line_no, raw=raw_line))
 
 
     if pending_unless_expression is not None:
@@ -429,3 +426,26 @@ def parse_program(
         )
 
     return parsed
+
+
+def _extract_unless_expression(prefix_text: str) -> str | None:
+    """Extract an `unless <expression>` segment from goto prefix text.
+
+    Only an `unless` clause that appears at the end of prefix text is treated
+    as a modifier; other words are ignored as no-op prefixes.
+    """
+
+    unless_match = re.search(r"\bunless\b\s+(.+)$", prefix_text, re.IGNORECASE)
+    if unless_match is None:
+        return None
+    return unless_match.group(1).strip() or None
+
+
+def _prefix_words_without_unless(prefix_text: str) -> list[str]:
+    """Return prefix words with a trailing `unless` clause removed."""
+
+    unless_match = re.search(r"\bunless\b\s+.+$", prefix_text, re.IGNORECASE)
+    prefix_without_unless = (
+        prefix_text[: unless_match.start()].strip() if unless_match else prefix_text
+    )
+    return prefix_without_unless.lower().split()
