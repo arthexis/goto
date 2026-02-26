@@ -73,6 +73,19 @@ def test_parse_unless_prefix_controls_jump_behavior() -> None:
     assert parsed[2].should_jump is True
 
 
+
+
+def test_unless_expression_with_goto_text_is_not_misparsed_as_goto() -> None:
+    """Standalone unless expressions may contain the word `goto` in strings."""
+
+    parsed = parse_program(
+        'start:\nunless "goto x" ~= "y"\ngoto start\n'
+    )
+
+    assert parsed[1].is_goto is True
+    assert parsed[1].goto_target == "start"
+    assert parsed[1].should_jump is True
+
 def test_parse_unless_with_more_or_less_operator() -> None:
     """Unless can use `~=` for approximate equality checks."""
 
