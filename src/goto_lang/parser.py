@@ -109,8 +109,9 @@ def _split_goto_expressions(expression: str) -> list[str]:
 
     def append_part(end: int) -> None:
         segment = expression[start:end].strip()
-        if segment:
-            parts.append(segment)
+        if not segment:
+            raise ValueError("Goto target list contains an empty target.")
+        parts.append(segment)
 
     index = 0
     while index < len(expression):
@@ -497,19 +498,22 @@ def parse_program(
             if unless_expression is None and pending_unless_expression is not None:
                 unless_expression = pending_unless_expression[1]
             pending_unless_expression = None
-            target = (
-                tuple(
+            target: tuple[str, ...] | None = None
+            if expression is not None:
+                try:
+                    target_parts = _split_goto_expressions(expression)
+                except ValueError as exc:
+                    raise ParseError(f"Invalid goto target on line {line_no}.") from exc
+
+                target = tuple(
                     _resolve_expression(
                         part,
                         line_no,
                         allow_file_reference=True,
                         user_function=user_function,
                     )
-                    for part in _split_goto_expressions(expression)
+                    for part in target_parts
                 )
-                if expression is not None
-                else None
-            )
             prefix_words = _prefix_words_without_unless(prefix_text)
             base_should_jump = True
             if unless_expression is not None:

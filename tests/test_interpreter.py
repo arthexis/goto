@@ -137,6 +137,17 @@ def test_run_spawns_a_thread_for_each_multi_target_goto() -> None:
     assert result.reason == "completed"
     assert result.steps == 11
 
+
+def test_run_enforces_max_steps_across_multi_target_threads() -> None:
+    """Step limit applies globally even when one scheduler pass has many threads."""
+
+    source = "start:\ngoto left, right and end\nleft:\ngoto done\nright:\ngoto done\nend:\ngoto done\ndone:\n"
+    result = Interpreter().run(source, max_steps=3)
+
+    assert result.terminated is False
+    assert result.reason == "step limit reached (3)"
+    assert result.steps == 3
+
 def test_external_goto_is_not_treated_as_local_infinite_loop(tmp_path: Path) -> None:
     """Compiler allows unresolved external control flow without false positives."""
 

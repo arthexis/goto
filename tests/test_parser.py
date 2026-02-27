@@ -134,6 +134,22 @@ def test_parse_multiple_goto_targets_with_commas_and_and() -> None:
     assert parsed[1].goto_targets == ("alpha", "beta", "gamma")
     assert parsed[1].goto_target == "alpha"
 
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "start:\ngoto and\n",
+        "start:\ngoto alpha,\n",
+        "start:\ngoto alpha and\n",
+        "start:\ngoto , alpha\n",
+    ],
+)
+def test_reject_empty_goto_targets(source: str) -> None:
+    """Parser rejects dangling separators that produce empty target lists."""
+
+    with pytest.raises(ParseError, match="Invalid goto target"):
+        parse_program(source)
+
 def test_reject_invalid_expression() -> None:
     """Parser raises when expressions cannot be evaluated."""
 

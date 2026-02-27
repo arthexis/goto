@@ -173,17 +173,17 @@ class Interpreter:
         ]
 
         while threads:
-            if steps >= max_steps:
-                return ExecutionResult(
-                    terminated=False,
-                    steps=steps,
-                    instruction_pointer=threads[0].instruction_pointer,
-                    reason=f"step limit reached ({max_steps})",
-                    trace=trace,
-                )
-
             next_threads: list[ThreadState] = []
             for thread in threads:
+                if steps >= max_steps:
+                    return ExecutionResult(
+                        terminated=False,
+                        steps=steps,
+                        instruction_pointer=thread.instruction_pointer,
+                        reason=f"step limit reached ({max_steps})",
+                        trace=trace,
+                    )
+
                 if thread.instruction_pointer >= len(thread.program.statements):
                     continue
 
