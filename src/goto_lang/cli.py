@@ -60,9 +60,19 @@ def _render_program_inspection(runtime: Interpreter, source_path: Path) -> str:
     )
     lines = [f"Labels: {labels_rendered or '<none>'}", "Statements:"]
     for index, statement in enumerate(program.statements):
+        rendered_argument: object
+        if statement.argument is None:
+            rendered_argument = None
+        elif statement.kind == "label":
+            rendered_argument = statement.argument[0]
+        elif len(statement.argument) == 1:
+            rendered_argument = statement.argument[0]
+        else:
+            rendered_argument = list(statement.argument)
+
         jump_status = " jump" if statement.kind == "goto" and statement.should_jump else " no-jump"
         lines.append(
-            f"  [{index}] {statement.kind} {statement.argument!r}"
+            f"  [{index}] {statement.kind} {rendered_argument!r}"
             f" line={statement.source_line}{jump_status if statement.kind == 'goto' else ''}"
         )
     return "\n".join(lines)
