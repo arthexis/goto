@@ -126,6 +126,17 @@ def test_even_not_modifiers_preserve_goto_jump() -> None:
         Interpreter().compile(source)
 
 
+
+def test_run_spawns_a_thread_for_each_multi_target_goto() -> None:
+    """A multi-target goto fans out execution into one thread per target."""
+
+    source = "start:\ngoto left, right and end\nleft:\ngoto done\nright:\ngoto done\nend:\ngoto done\ndone:\n"
+    result = Interpreter().run(source, max_steps=20)
+
+    assert result.terminated is True
+    assert result.reason == "completed"
+    assert result.steps == 11
+
 def test_external_goto_is_not_treated_as_local_infinite_loop(tmp_path: Path) -> None:
     """Compiler allows unresolved external control flow without false positives."""
 
@@ -264,7 +275,7 @@ def test_compile_accepts_more_or_less_program_with_semicolons() -> None:
 
     assert program.labels == {"start": 0}
     assert program.statements[1].should_jump is False
-    assert program.statements[1].argument == "start"
+    assert program.statements[1].argument == ("start",)
 
 def test_run_user_function_without_args_prompts_and_jumps_case_insensitively() -> None:
     """Runtime default user() prompt supports case-insensitive, trimmed label choices."""

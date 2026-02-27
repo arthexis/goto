@@ -94,7 +94,70 @@ class ParsedLine:
     label: str | None = None
     is_goto: bool = False
     goto_target: str | None = None
+    goto_targets: tuple[str, ...] | None = None
     should_jump: bool | None = None
+
+
+def _split_goto_expressions(expression: str) -> list[str]:
+    """Split goto expressions by top-level commas and standalone `and` words."""
+
+    parts: list[str] = []
+    start = 0
+    depth = 0
+    in_single_quote = False
+    in_double_quote = False
+
+    def append_part(end: int) -> None:
+        segment = expression[start:end].strip()
+        if segment:
+            parts.append(segment)
+
+    index = 0
+    while index < len(expression):
+        char = expression[index]
+        previous_char = expression[index - 1] if index > 0 else ""
+
+        if char == "'" and not in_double_quote and previous_char != "\\":
+            in_single_quote = not in_single_quote
+            index += 1
+            continue
+        if char == '"' and not in_single_quote and previous_char != "\\":
+            in_double_quote = not in_double_quote
+            index += 1
+            continue
+        if in_single_quote or in_double_quote:
+            index += 1
+            continue
+
+        if char == "(":
+            depth += 1
+            index += 1
+            continue
+        if char == ")":
+            depth = max(0, depth - 1)
+            index += 1
+            continue
+
+        if depth == 0 and char == ",":
+            append_part(index)
+            start = index + 1
+            index += 1
+            continue
+
+        if depth == 0 and expression[index : index + 3].lower() == "and":
+            before_ok = index == 0 or expression[index - 1].isspace()
+            after_index = index + 3
+            after_ok = after_index >= len(expression) or expression[after_index].isspace()
+            if before_ok and after_ok:
+                append_part(index)
+                start = after_index
+                index = after_index
+                continue
+
+        index += 1
+
+    append_part(len(expression))
+    return parts
 
 
 def _resolve_expression(
@@ -435,11 +498,14 @@ def parse_program(
                 unless_expression = pending_unless_expression[1]
             pending_unless_expression = None
             target = (
-                _resolve_expression(
-                    expression,
-                    line_no,
-                    allow_file_reference=True,
-                    user_function=user_function,
+                tuple(
+                    _resolve_expression(
+                        part,
+                        line_no,
+                        allow_file_reference=True,
+                        user_function=user_function,
+                    )
+                    for part in _split_goto_expressions(expression)
                 )
                 if expression is not None
                 else None
@@ -465,7 +531,8 @@ def parse_program(
                     index=line_no,
                     raw=raw_line,
                     is_goto=True,
-                    goto_target=target,
+                    goto_target=target[0] if target else None,
+                    goto_targets=target,
                     should_jump=should_jump,
                 )
             )

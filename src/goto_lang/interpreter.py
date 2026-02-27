@@ -14,7 +14,7 @@ class Statement:
     """Executable representation of a source line."""
 
     kind: str
-    argument: str | None
+    argument: tuple[str, ...] | None
     source_line: int
     should_jump: bool = True
 
@@ -45,6 +45,16 @@ class TraceEvent:
 
     file: str
     line: int
+
+
+@dataclass
+class ThreadState:
+    """Mutable execution state for one runtime thread."""
+
+    program: Program
+    instruction_pointer: int
+    current_path: Path | None
+    label_stack: list[str]
 
 
 class Interpreter:
@@ -149,77 +159,103 @@ class Interpreter:
     ) -> ExecutionResult:
         """Execute a program, optionally allowing file-based goto targets."""
 
-        ip = 0
+        last_instruction_pointer = 0
         steps = 0
         trace: list[TraceEvent] = []
-        label_stack = list(program.label_stack)
         default_trace_file = str(current_path) if current_path is not None else "<memory>"
+        threads: list[ThreadState] = [
+            ThreadState(
+                program=program,
+                instruction_pointer=0,
+                current_path=current_path,
+                label_stack=list(program.label_stack),
+            )
+        ]
 
-        while ip < len(program.statements):
+        while threads:
             if steps >= max_steps:
                 return ExecutionResult(
                     terminated=False,
                     steps=steps,
-                    instruction_pointer=ip,
+                    instruction_pointer=threads[0].instruction_pointer,
                     reason=f"step limit reached ({max_steps})",
                     trace=trace,
                 )
 
-            statement = program.statements[ip]
-            trace_file = str(current_path) if current_path is not None else default_trace_file
-            trace.append(TraceEvent(file=trace_file, line=statement.source_line))
-            steps += 1
+            next_threads: list[ThreadState] = []
+            for thread in threads:
+                if thread.instruction_pointer >= len(thread.program.statements):
+                    continue
 
-            if statement.kind == "label":
-                assert statement.argument is not None
-                label_stack.append(statement.argument)
-                ip += 1
-            elif statement.kind == "goto":
-                if statement.should_jump:
-                    target = statement.argument
-                    if target is None:
-                        if not label_stack:
-                            raise ParseError(
-                                f"Cannot execute targetless goto on line {statement.source_line} "
-                                "before any labels are encountered."
-                            )
-                        label_stack.pop()
-                        target = label_stack[-1] if label_stack else None
-                        if target is None:
-                            ip += 1
-                            continue
+                statement = thread.program.statements[thread.instruction_pointer]
+                trace_file = (
+                    str(thread.current_path)
+                    if thread.current_path is not None
+                    else default_trace_file
+                )
+                trace.append(TraceEvent(file=trace_file, line=statement.source_line))
+                last_instruction_pointer = thread.instruction_pointer
+                steps += 1
 
-                    external_target = self._parse_external_target(target)
-                    if external_target is not None:
-                        if current_path is None:
-                            raise ParseError(
-                                "File-based goto requires execution from a file path."
-                            )
-                        program, ip, current_path = self._load_external_program(
-                            current_path,
-                            external_target[0],
-                            external_target[1],
+                if statement.kind == "label":
+                    assert statement.argument is not None
+                    thread.label_stack.append(statement.argument[0])
+                    thread.instruction_pointer += 1
+                    next_threads.append(thread)
+                    continue
+
+                if statement.kind == "noop":
+                    thread.instruction_pointer += 1
+                    next_threads.append(thread)
+                    continue
+
+                if statement.kind != "goto":
+                    raise RuntimeError(f"Unknown statement kind '{statement.kind}'.")
+
+                if not statement.should_jump:
+                    self._discard_label_from_stack(thread.label_stack, statement.argument)
+                    thread.instruction_pointer += 1
+                    next_threads.append(thread)
+                    continue
+
+                targets = statement.argument
+                if targets is None:
+                    if not thread.label_stack:
+                        raise ParseError(
+                            f"Cannot execute targetless goto on line {statement.source_line} "
+                            "before any labels are encountered."
                         )
-                    else:
-                        ip = program.labels[target]
-                else:
-                    self._discard_label_from_stack(label_stack, statement.argument)
-                    ip += 1
-            elif statement.kind == "noop":
-                ip += 1
-            else:
-                raise RuntimeError(f"Unknown statement kind '{statement.kind}'.")
+                    thread.label_stack.pop()
+                    target = thread.label_stack[-1] if thread.label_stack else None
+                    if target is None:
+                        thread.instruction_pointer += 1
+                        next_threads.append(thread)
+                        continue
+                    targets = (target,)
+
+                spawned_threads: list[ThreadState] = []
+                for target in targets:
+                    spawned_threads.append(
+                        self._jump_to_target(thread, target)
+                    )
+                next_threads.extend(spawned_threads)
+
+            threads = [
+                thread
+                for thread in next_threads
+                if thread.instruction_pointer < len(thread.program.statements)
+            ]
 
         return ExecutionResult(
             terminated=True,
             steps=steps,
-            instruction_pointer=ip,
+            instruction_pointer=last_instruction_pointer,
             reason="completed",
             trace=trace,
         )
 
     @staticmethod
-    def _discard_label_from_stack(label_stack: list[str], target: str | None) -> None:
+    def _discard_label_from_stack(label_stack: list[str], target: tuple[str, ...] | None) -> None:
         """Remove a pending local goto target from the runtime label stack.
 
         When a goto is disabled via ``not`` and the target label is already on the
@@ -233,15 +269,16 @@ class Interpreter:
         if target is None:
             return
 
-        for idx in range(len(label_stack) - 1, -1, -1):
-            if label_stack[idx] == target:
-                del label_stack[idx]
-                return
+        for one_target in target:
+            for idx in range(len(label_stack) - 1, -1, -1):
+                if label_stack[idx] == one_target:
+                    del label_stack[idx]
+                    break
 
     @staticmethod
     def _discard_label_from_history(
         encountered_labels: tuple[str, ...],
-        target: str | None,
+        target: tuple[str, ...] | None,
     ) -> tuple[str, ...]:
         """Return label history with the newest matching label removed.
 
@@ -257,11 +294,42 @@ class Interpreter:
         if target is None:
             return encountered_labels
 
-        for idx in range(len(encountered_labels) - 1, -1, -1):
-            if encountered_labels[idx] == target:
-                return encountered_labels[:idx] + encountered_labels[idx + 1 :]
+        updated = encountered_labels
+        for one_target in target:
+            for idx in range(len(updated) - 1, -1, -1):
+                if updated[idx] == one_target:
+                    updated = updated[:idx] + updated[idx + 1 :]
+                    break
 
-        return encountered_labels
+        return updated
+
+    def _jump_to_target(self, thread: ThreadState, target: str) -> ThreadState:
+        """Return a thread state positioned at the target label."""
+
+        current_path = thread.current_path
+        if self._parse_external_target(target) is not None:
+            external_target = self._parse_external_target(target)
+            assert external_target is not None
+            if current_path is None:
+                raise ParseError("File-based goto requires execution from a file path.")
+            new_program, new_ip, new_path = self._load_external_program(
+                current_path,
+                external_target[0],
+                external_target[1],
+            )
+            return type(thread)(
+                program=new_program,
+                instruction_pointer=new_ip,
+                current_path=new_path,
+                label_stack=list(thread.label_stack),
+            )
+
+        return type(thread)(
+            program=thread.program,
+            instruction_pointer=thread.program.labels[target],
+            current_path=current_path,
+            label_stack=list(thread.label_stack),
+        )
 
     @staticmethod
     def _parse_external_target(target: str) -> tuple[str, str | None] | None:
@@ -310,7 +378,7 @@ class Interpreter:
             statements.append(
                 Statement(
                     kind="label",
-                    argument=line.label,
+                    argument=(line.label,),
                     source_line=line.index,
                 )
             )
@@ -320,7 +388,7 @@ class Interpreter:
             statements.append(
                 Statement(
                     kind="goto",
-                    argument=line.goto_target,
+                    argument=line.goto_targets,
                     should_jump=line.should_jump is not False,
                     source_line=line.index,
                 )
@@ -347,14 +415,15 @@ class Interpreter:
                 continue
             if statement.argument is None:
                 continue
-            if statement.argument in labels:
-                continue
-            if Interpreter._parse_external_target(statement.argument) is not None:
-                continue
-            raise ParseError(
-                f"Unknown label '{statement.argument}' referenced "
-                f"on line {statement.source_line}."
-            )
+            for target in statement.argument:
+                if target in labels:
+                    continue
+                if Interpreter._parse_external_target(target) is not None:
+                    continue
+                raise ParseError(
+                    f"Unknown label '{target}' referenced "
+                    f"on line {statement.source_line}."
+                )
 
     @staticmethod
     def _validate_not_guaranteed_infinite(
@@ -367,6 +436,15 @@ class Interpreter:
         del label_stack
 
         if not statements:
+            return
+
+        has_multi_target_goto = any(
+            statement.kind == "goto"
+            and statement.argument is not None
+            and len(statement.argument) > 1
+            for statement in statements
+        )
+        if has_multi_target_goto:
             return
 
         has_targetless_goto = any(
@@ -393,7 +471,7 @@ class Interpreter:
                 if not statement.should_jump:
                     instruction_pointer += 1
                     continue
-                target = statement.argument or ""
+                target = statement.argument[0] if statement.argument else ""
                 if Interpreter._parse_external_target(target) is not None:
                     return
                 instruction_pointer = labels[target]
@@ -427,7 +505,7 @@ class Interpreter:
             statement = statements[instruction_pointer]
             if statement.kind == "label":
                 assert statement.argument is not None
-                encountered_labels = (*encountered_labels, statement.argument)
+                encountered_labels = (*encountered_labels, statement.argument[0])
                 instruction_pointer += 1
                 continue
 
@@ -446,8 +524,8 @@ class Interpreter:
                 instruction_pointer += 1
                 continue
 
-            target = statement.argument
-            if target is None:
+            targets = statement.argument
+            if targets is None:
                 if not encountered_labels:
                     raise ParseError(
                         f"Cannot execute targetless goto on line {statement.source_line} "
@@ -458,7 +536,12 @@ class Interpreter:
                 if target is None:
                     instruction_pointer += 1
                     continue
+            else:
+                target = targets[0]
 
+            if target is None:
+                instruction_pointer += 1
+                continue
             if Interpreter._parse_external_target(target) is not None:
                 return
             instruction_pointer = labels[target]
