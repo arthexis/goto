@@ -27,3 +27,17 @@ def test_parse_not_and_please_modifiers() -> None:
     parsed = parse_program("please not goto done")
     assert parsed[0].please is True
     assert parsed[0].not_count == 1
+
+
+def test_parse_goto_targets_keep_runtime_expressions() -> None:
+    """Goto target expressions stay raw for runtime sigil resolution."""
+
+    parsed = parse_program("goto [path] + 3, `fallback`")
+    assert parsed[0].goto_targets == ("[path] + 3", "`fallback`")
+
+
+def test_parse_goto_ignores_keyword_in_backticks() -> None:
+    """Backtick strings keep embedded goto text as plain output."""
+
+    parsed = parse_program("`do not goto there`")
+    assert parsed[0].is_goto is False

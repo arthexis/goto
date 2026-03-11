@@ -32,7 +32,7 @@ Rules:
 7. `unless <expression>` may appear before goto and suppresses the jump when the expression evaluates to `True`.
 8. Custom operators are supported in expressions: `~=` ("more or less") checks approximate equality and `=~` ("less is more") is the inverse.
 9. The number of `not` modifiers changes behavior by toggling the jump decision: odd inverts it, even keeps it.
-10. Expression results are converted to strings for label lookup.
+10. Expression results are converted to strings for label lookup at runtime (after sigils are acquired).
 11. Duplicate label definitions are not allowed after expression resolution.
 12. Local `goto` targets must refer to an existing resolved label.
 13. A targetless `goto` pops the most recently encountered label and jumps to the new stack top.
@@ -40,6 +40,9 @@ Rules:
 15. Programs whose local control flow is provably infinite are rejected at compile time.
 16. A trailing `;` is accepted at the end of non-empty statements.
 17. Blank lines and lines beginning with `#` are ignored.
+18. Sigils (`[name]`) are acquired on first use (prompted once, then cached globally) in both output text and goto expressions.
+19. Backtick strings are accepted in expressions alongside single and double quotes.
+20. A successful goto resolution collapses currently running threads to only that goto's resolved target threads.
 
 ## Running
 

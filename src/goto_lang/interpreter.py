@@ -9,7 +9,7 @@ import re
 from typing import Protocol
 from urllib import request
 
-from .parser import FILE_REFERENCE_PATTERN, ParseError, ParsedLine, parse_program
+from .parser import FILE_REFERENCE_PATTERN, ParseError, ParsedLine, parse_program, resolve_expression
 
 
 @dataclass(frozen=True)
@@ -197,8 +197,8 @@ class Interpreter:
         runtime_provider = provider or InteractiveProvider()
         return self._run_with_context(program, max_steps=max_steps, context=RuntimeContext(provider=runtime_provider))
 
-    def _interpolate_sigils(self, text: str, context: RuntimeContext) -> str:
-        """Replace [sigils] with remembered or newly prompted values."""
+    def _acquire_sigils(self, text: str, context: RuntimeContext) -> str:
+        """Replace [sigils] with remembered or newly acquired values."""
 
         def replacer(match: re.Match[str]) -> str:
             key = " ".join(match.group(1).split())
@@ -207,6 +207,12 @@ class Interpreter:
             return context.sigils[key]
 
         return self.SIGIL_PATTERN.sub(replacer, text)
+
+    def _resolve_target(self, target_expression: str, source_line: int, context: RuntimeContext) -> str:
+        """Resolve one goto target expression using acquired sigils."""
+
+        resolved_expression = self._acquire_sigils(target_expression, context)
+        return resolve_expression(resolved_expression, source_line, allow_file_reference=True)
 
     def _run_with_context(
         self,
@@ -248,7 +254,7 @@ class Interpreter:
 
                 if statement.kind == "text":
                     if statement.output_text:
-                        print(self._interpolate_sigils(statement.output_text, context))
+                        print(self._acquire_sigils(statement.output_text, context))
                     thread.instruction_pointer += 1
                     next_threads.append(thread)
                     continue
@@ -257,10 +263,10 @@ class Interpreter:
                     raise RuntimeError(f"Unknown statement kind '{statement.kind}'.")
 
                 if statement.output_text:
-                    print(self._interpolate_sigils(statement.output_text, context))
+                    print(self._acquire_sigils(statement.output_text, context))
 
                 question = statement.decision_text or f"Perform goto at line {statement.source_line}?"
-                resolved_question = self._interpolate_sigils(question, context)
+                resolved_question = self._acquire_sigils(question, context)
                 should_jump = context.provider.ask_yes_no(resolved_question)
 
                 if statement.not_count % 2 == 1:
@@ -268,7 +274,7 @@ class Interpreter:
 
                 if statement.please and not should_jump:
                     should_jump = not context.provider.ask_yes_no(
-                        self._interpolate_sigils("PLEASE confirm skipping goto.", context)
+                        self._acquire_sigils("PLEASE confirm skipping goto.", context)
                     )
 
                 if not should_jump:
@@ -288,26 +294,49 @@ class Interpreter:
                         thread.instruction_pointer += 1
                         next_threads.append(thread)
                         continue
-                    targets = (target,)
+                    resolved_targets = (target,)
+                else:
+                    resolved_targets = tuple(self._resolve_target(target, statement.source_line, context) for target in targets)
 
-                for target in targets:
-                    next_threads.append(self._jump_to_target(thread, target))
+                collapsed_threads: list[ThreadState] = []
+                for target in resolved_targets:
+                    jumped = self._jump_to_target(thread, target)
+                    if jumped is None:
+                        print(self._acquire_sigils(target, context))
+                        continue
+                    collapsed_threads.append(jumped)
 
-            threads = [thread for thread in next_threads if thread.instruction_pointer < len(thread.program.statements)]
+                if collapsed_threads:
+                    threads = [candidate for candidate in collapsed_threads if candidate.instruction_pointer < len(candidate.program.statements)]
+                    break
+
+                thread.instruction_pointer += 1
+                next_threads.append(thread)
+
+            else:
+                threads = [thread for thread in next_threads if thread.instruction_pointer < len(thread.program.statements)]
+                continue
+
+            continue
 
         return ExecutionResult(True, steps, last_instruction_pointer, "completed", trace)
 
-    def _jump_to_target(self, thread: ThreadState, target: str) -> ThreadState:
-        """Return a thread state positioned at the target label."""
+    def _jump_to_target(self, thread: ThreadState, target: str) -> ThreadState | None:
+        """Return a thread state positioned at the target label, if found."""
 
         current_path = thread.current_path
         external_target = self._parse_external_target(target)
         if external_target is not None:
             if current_path is None:
-                raise ParseError("File-based goto requires execution from a file path.")
-            new_program, new_ip, new_path = self._load_external_program(current_path, external_target[0], external_target[1])
+                return None
+            try:
+                new_program, new_ip, new_path = self._load_external_program(current_path, external_target[0], external_target[1])
+            except ParseError:
+                return None
             return type(thread)(program=new_program, instruction_pointer=new_ip, current_path=new_path, label_stack=list(thread.label_stack))
 
+        if target not in thread.program.labels:
+            return None
         return type(thread)(program=thread.program, instruction_pointer=thread.program.labels[target], current_path=current_path, label_stack=list(thread.label_stack))
 
     @staticmethod
@@ -360,14 +389,6 @@ class Interpreter:
 
     @staticmethod
     def _validate_goto_targets(statements: list[Statement], labels: dict[str, int]) -> None:
-        """Ensure each goto instruction references a known local label or file target."""
+        """Keep compile-time validation permissive because targets resolve at runtime."""
 
-        for statement in statements:
-            if statement.kind != "goto" or statement.argument is None:
-                continue
-            for target in statement.argument:
-                if target in labels:
-                    continue
-                if Interpreter._parse_external_target(target) is not None:
-                    continue
-                raise ParseError(f"Unknown label '{target}' referenced on line {statement.source_line}.")
+        del statements, labels
