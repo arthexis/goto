@@ -1,0 +1,9 @@
+start:
+goto left, right
+left:
+Left branch sings.
+goto encore
+right:
+Right branch dances.
+encore:
+Thread show complete.

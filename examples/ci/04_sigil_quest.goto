@@ -1,0 +1,11 @@
+start:
+Greetings, [hero]!
+goto [door]
+sun:
+You chose sunlight.
+goto end
+moon:
+You chose moonlight.
+goto end
+end:
+Quest logged for [hero].

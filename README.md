@@ -70,6 +70,19 @@ Exit codes:
 - `1`: execution stopped due to step limit (run mode only).
 - `2`: parse/compile error (including `--check`).
 
+## CI example programs
+
+A battery of fun scripts lives under `examples/ci/` and covers increasing complexity:
+
+- `01_warmup.goto`: simple local jump with output checks.
+- `02_math_portal.goto`: expression-based label resolution.
+- `03_polite_rebellion.goto`: `please` + `not` decision modifiers.
+- `04_sigil_quest.goto`: sigil acquisition in text and goto expressions.
+- `05_thread_show.goto`: multi-target thread behavior.
+- `maze/entry.goto` + `maze/chamber.goto`: cross-file goto traversal.
+
+These are exercised by `tests/test_ci_programs.py` as part of `pytest`.
+
 ## Development
 
 Install in editable mode with test tooling:

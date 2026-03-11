@@ -1,0 +1,8 @@
+start:
+not please goto detour
+Stayed on the main quest.
+goto end
+detour:
+Took an unexpected detour.
+end:
+Politeness protocol complete.

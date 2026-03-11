@@ -1,0 +1,5 @@
+room:
+Entered the side chamber.
+goto finale
+finale:
+Treasure found.
