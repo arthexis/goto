@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+import json
 import re
 
 
@@ -49,6 +50,7 @@ def _match_goto_statement(line: str) -> tuple[str, str | None] | None:
 
     in_single = False
     in_double = False
+    in_backtick = False
     escaped = False
     lowered = line.lower()
 
@@ -59,13 +61,16 @@ def _match_goto_statement(line: str) -> tuple[str, str | None] | None:
         if character == "\\":
             escaped = True
             continue
-        if character == "'" and not in_double:
+        if character == "'" and not in_double and not in_backtick:
             in_single = not in_single
             continue
-        if character == '"' and not in_single:
+        if character == '"' and not in_single and not in_backtick:
             in_double = not in_double
             continue
-        if in_single or in_double:
+        if character == "`" and not in_single and not in_double:
+            in_backtick = not in_backtick
+            continue
+        if in_single or in_double or in_backtick:
             continue
 
         if lowered.startswith("goto", index):
@@ -94,8 +99,45 @@ def _match_goto_statement(line: str) -> tuple[str, str | None] | None:
     return None
 
 
+def _normalize_backtick_strings(expression: str, line_no: int) -> str:
+    """Convert backtick-quoted strings to JSON double-quoted strings for AST parsing."""
+
+    pieces: list[str] = []
+    current: list[str] = []
+    in_backtick = False
+    escaped = False
+
+    for character in expression:
+        if in_backtick:
+            if escaped:
+                current.append(character)
+                escaped = False
+                continue
+            if character == "\\":
+                escaped = True
+                continue
+            if character == "`":
+                pieces.append(json.dumps("".join(current)))
+                current = []
+                in_backtick = False
+                continue
+            current.append(character)
+            continue
+
+        if character == "`":
+            in_backtick = True
+            continue
+        pieces.append(character)
+
+    if in_backtick:
+        raise ParseError(f"Unterminated backtick string on line {line_no}: '{expression}'.")
+    return "".join(pieces)
+
+
 def _safe_eval_value(expression: str, line_no: int) -> object:
     """Evaluate constrained arithmetic/string expressions."""
+
+    normalized_expression = _normalize_backtick_strings(expression, line_no)
 
     def invalid_expression_error() -> ParseError:
         return ParseError(f"Invalid expression on line {line_no}: '{expression}'.")
@@ -128,11 +170,34 @@ def _safe_eval_value(expression: str, line_no: int) -> object:
                 return left * right
             if isinstance(node.op, ast.Div) and isinstance(left, (int, float)) and isinstance(right, (int, float)):
                 return left / right
+            if isinstance(node.op, ast.FloorDiv) and isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return left // right
+            if isinstance(node.op, ast.Mod) and isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return left % right
+            if isinstance(node.op, ast.Pow) and isinstance(left, (int, float)) and isinstance(right, (int, float)):
+                return left**right
+            raise invalid_expression_error()
+        if isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1:
+            left = eval_node(node.left)
+            right = eval_node(node.comparators[0])
+            op = node.ops[0]
+            if isinstance(op, ast.Lt):
+                return left < right
+            if isinstance(op, ast.LtE):
+                return left <= right
+            if isinstance(op, ast.Gt):
+                return left > right
+            if isinstance(op, ast.GtE):
+                return left >= right
+            if isinstance(op, ast.Eq):
+                return left == right
+            if isinstance(op, ast.NotEq):
+                return left != right
             raise invalid_expression_error()
         raise invalid_expression_error()
 
     try:
-        tree = ast.parse(expression, mode="eval")
+        tree = ast.parse(normalized_expression, mode="eval")
         return eval_node(tree)
     except ParseError:
         raise
@@ -140,7 +205,7 @@ def _safe_eval_value(expression: str, line_no: int) -> object:
         raise invalid_expression_error() from exc
 
 
-def _resolve_expression(expression: str, line_no: int, allow_file_reference: bool = False) -> str:
+def resolve_expression(expression: str, line_no: int, allow_file_reference: bool = False) -> str:
     """Evaluate an expression and convert the result into a label string."""
 
     if BARE_LABEL_PATTERN.match(expression):
@@ -196,7 +261,7 @@ def parse_program(source: str) -> list[ParsedLine]:
                 continue
 
         if line.endswith(":"):
-            label = _resolve_expression(line[:-1].strip(), line_no)
+            label = resolve_expression(line[:-1].strip(), line_no)
             parsed.append(ParsedLine(index=line_no, raw=raw_line, label=label))
             continue
 
@@ -209,7 +274,7 @@ def parse_program(source: str) -> list[ParsedLine]:
         output_text, decision_text, not_count, please = _extract_modifiers_and_text(prefix_text)
         target: tuple[str, ...] | None = None
         if expression is not None:
-            target = tuple(_resolve_expression(part, line_no, allow_file_reference=True) for part in _split_goto_expressions(expression))
+            target = tuple(_split_goto_expressions(expression))
 
         parsed.append(
             ParsedLine(
