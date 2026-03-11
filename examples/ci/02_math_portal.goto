@@ -1,0 +1,7 @@
+start:
+goto 1 + 1
+2:
+Math portal unlocked.
+goto done
+done:
+Arithmetic adventure complete.

@@ -1,0 +1,7 @@
+start:
+Welcome to the jump gauntlet!
+goto finale
+middle:
+You should not see this.
+finale:
+Warmup complete.
