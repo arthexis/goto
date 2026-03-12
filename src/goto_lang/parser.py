@@ -134,7 +134,7 @@ def _normalize_backtick_strings(expression: str, line_no: int) -> str:
     return "".join(pieces)
 
 
-def _safe_eval_value(expression: str, line_no: int) -> object:
+def _safe_eval_value(expression: str, line_no: int, sigils: dict[str, str] | None = None) -> object:
     """Evaluate constrained arithmetic/string expressions."""
 
     normalized_expression = _normalize_backtick_strings(expression, line_no)
@@ -177,6 +177,17 @@ def _safe_eval_value(expression: str, line_no: int) -> object:
             if isinstance(node.op, ast.Pow) and isinstance(left, (int, float)) and isinstance(right, (int, float)):
                 return left**right
             raise invalid_expression_error()
+        if isinstance(node, ast.NamedExpr):
+            if sigils is None:
+                raise invalid_expression_error()
+            if not isinstance(node.target, ast.Name):
+                raise invalid_expression_error()
+            key = " ".join(node.target.id.split())
+            if not key:
+                raise invalid_expression_error()
+            value = eval_node(node.value)
+            sigils[key] = str(value)
+            return value
         if isinstance(node, ast.Compare) and len(node.ops) == 1 and len(node.comparators) == 1:
             left = eval_node(node.left)
             right = eval_node(node.comparators[0])
@@ -205,7 +216,12 @@ def _safe_eval_value(expression: str, line_no: int) -> object:
         raise invalid_expression_error() from exc
 
 
-def resolve_expression(expression: str, line_no: int, allow_file_reference: bool = False) -> str:
+def resolve_expression(
+    expression: str,
+    line_no: int,
+    allow_file_reference: bool = False,
+    sigils: dict[str, str] | None = None,
+) -> str:
     """Evaluate an expression and convert the result into a label string."""
 
     if BARE_LABEL_PATTERN.match(expression):
@@ -214,7 +230,7 @@ def resolve_expression(expression: str, line_no: int, allow_file_reference: bool
     if allow_file_reference and FILE_REFERENCE_PATTERN.match(expression):
         return expression
 
-    resolved = str(_safe_eval_value(expression, line_no))
+    resolved = str(_safe_eval_value(expression, line_no, sigils=sigils))
     if allow_file_reference and FILE_REFERENCE_PATTERN.match(resolved):
         return resolved
     return _normalize_label_identifier(resolved)

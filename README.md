@@ -25,6 +25,7 @@ Rules:
    - unary numeric `+` / `-`
    - binary arithmetic `+`, `-`, `*`, `/`, `//`, `%`, `**`
    - string concatenation via `"a" + "b"`
+   - assignment expressions (`:=`) inside expressions only (for example: `goto (welcome := "Hello [name]!")`)
 3. Bare labels like `start` are still accepted directly, and `goto` also supports file targets (`<file>.goto`, `<file>.goto:<label>`, and `<file>.goto <label>`).
 4. Names, function calls, attribute access, comprehensions, imports, and other Python syntax are rejected.
 5. `goto` may be written as `goto` or `go to` in any case.
@@ -104,7 +105,8 @@ This project is distributed under the MIT License. See [LICENSE](LICENSE) for de
 ## Design notes
 
 Because the language has only labels and unconditional jumps, control flow is
-explicit and there is no mutable state in the core language.
+explicit. Mutable state is allowed only through sigil input/output and walrus
+assignment (`:=`) to sigils while evaluating expressions.
 
 ## Backward compatibility notes
 
