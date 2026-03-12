@@ -96,3 +96,26 @@ def test_runtime_unknown_target_prints_and_does_not_collapse(capsys) -> None:
     Interpreter().run(source, provider=provider)
 
     assert capsys.readouterr().out.splitlines() == ["missing", "finished"]
+
+
+def test_runtime_walrus_assigns_sigil_during_goto_resolution(capsys) -> None:
+    """Walrus assignment can mutate sigils while evaluating goto expressions."""
+
+    source = "start:\ngoto (welcome := `Hello [name]!`)\nHello [welcome]\n"
+    provider = FakeProvider(yes_no_answers=[True], values={"name": "Ada"})
+
+    Interpreter().run(source, provider=provider)
+
+    assert capsys.readouterr().out.splitlines() == ["hello ada!", "Hello Hello Ada!"]
+
+
+def test_runtime_walrus_assignment_is_expression_only(capsys) -> None:
+    """A bare walrus line stays plain text and does not mutate sigils."""
+
+    source = "welcome := `Hello [name]!`\nHello [welcome]\n"
+    provider = FakeProvider(yes_no_answers=[], values={"name": "Ada", "welcome": "Fallback"})
+
+    Interpreter().run(source, provider=provider)
+
+    assert provider.asked_values == ["name", "welcome"]
+    assert capsys.readouterr().out.splitlines() == ["welcome := `Hello Ada!`", "Hello Fallback"]

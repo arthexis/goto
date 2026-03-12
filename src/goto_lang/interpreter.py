@@ -212,7 +212,7 @@ class Interpreter:
         """Resolve one goto target expression using acquired sigils."""
 
         resolved_expression = self._acquire_sigils(target_expression, context)
-        return resolve_expression(resolved_expression, source_line, allow_file_reference=True)
+        return resolve_expression(resolved_expression, source_line, allow_file_reference=True, sigils=context.sigils)
 
     def _run_with_context(
         self,

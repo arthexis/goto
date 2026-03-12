@@ -1,6 +1,8 @@
 """Tests for goto language parsing."""
 
-from goto_lang.parser import parse_program
+import pytest
+
+from goto_lang.parser import ParseError, parse_program, resolve_expression
 
 
 def test_parse_text_line_as_output() -> None:
@@ -41,3 +43,10 @@ def test_parse_goto_ignores_keyword_in_backticks() -> None:
 
     parsed = parse_program("`do not goto there`")
     assert parsed[0].is_goto is False
+
+
+def test_resolve_expression_walrus_requires_expression_context() -> None:
+    """Top-level walrus is rejected because it is not a standalone statement."""
+
+    with pytest.raises(ParseError):
+        resolve_expression("welcome := 'hello'", 1, sigils={})
